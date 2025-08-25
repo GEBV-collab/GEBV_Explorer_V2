@@ -91,3 +91,55 @@ st.download_button(
     file_name="filtered_lines_combined.csv",
     mime="text/csv",
 )
+# ─── 7a) LLM: Ask the dataset ─────────────────────────
+from llm_utils import ask_model
+
+st.write("---")
+st.subheader("🤖 Ask the dataset (LLM)")
+st.caption("Ask questions like: Top ten lines for GEBV_Brix")
+
+qcol1, qcol2 = st.columns([3,1])
+with qcol1:
+    user_q = st.text_input("Your question", key="llm_q", placeholder="e.g., Top 10 lines for GEBV_yield and GEBV_Brix?")
+with qcol2:
+    run_llm = st.button("Ask")
+
+if run_llm and user_q:
+    try:
+        out = ask_model(user_q, df)  # uses the df already built in your app
+        st.markdown(f"**Answer:** {out['answer']}")
+        with st.expander("Show filter plan (JSON)"):
+            st.code(out["plan"], language="json")
+        st.dataframe(out["result_df"])
+        st.download_button(
+            "Download LLM-filtered CSV",
+            out["result_df"].to_csv(index=False).encode("utf-8"),
+            file_name="llm_filtered_lines.csv",
+            mime="text/csv",
+        )
+    except Exception as e:
+        st.error(f"LLM query failed: {e}")
+
+# ─── 7b) Trait–Trait Correlation Heatmap ──────────────
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+st.write("---")
+st.subheader("Trait–Trait Correlation Heatmap")
+
+# Compute correlation matrix for selected traits
+corr = df[trait_cols].corr()
+
+fig, ax = plt.subplots(figsize=(10, 8))
+sns.heatmap(
+    corr,
+    annot=True,
+    fmt=".2f",
+    cmap="coolwarm",
+    center=0,
+    ax=ax,
+    cbar_kws={'label': 'Pearson Correlation'},
+    annot_kws={"size": 5}  # 👈 Set annotation font size here
+)
+
+st.pyplot(fig)
