@@ -8,7 +8,7 @@
 1) Clone the repo with the below command in terminal and change into the directory
 ```bash
 git clone https://github.com/ahmccormick/GEBV_Explorer_V2.git
-cd GEBV_Explorer
+cd GEBV_Explorer_V2
 ```
 2) Create a new environment (Environment_1) and activate (made using python 3.12.10)
 ```bash
