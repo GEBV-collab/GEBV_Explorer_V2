@@ -2,6 +2,8 @@ import os
 import streamlit as st
 import pandas as pd
 import altair as alt
+import json
+import time
 
 # ─── Resolve paths relative to this script’s folder ───
 BASE = os.path.dirname(__file__)
@@ -20,18 +22,57 @@ if "Group" in df_a.columns and "Group" in df_q.columns:
 else:
     df = pd.merge(df_q, df_a, on="Line", how="inner")
 
-# ─── 3) Sidebar sliders (initialize full range) ──────
+# ─── Shared State Management ─────────────────────────
+STATE_FILE = "slider_state.json"
+
+def load_api_slider_state():
+    """Load slider state from shared file"""
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
+def get_slider_value_from_api(trait_col, df):
+    """Get slider range from API state or return full range"""
+    api_state = load_api_slider_state()
+    
+    if trait_col in api_state:
+        state = api_state[trait_col]
+        min_val = float(df[trait_col].quantile(state["start_percent"] / 100))
+        max_val = float(df[trait_col].quantile(state["end_percent"] / 100))
+        return (min_val, max_val), True
+    
+    # Return full range if no API override
+    lo, hi = float(df[trait_col].min()), float(df[trait_col].max())
+    return (lo, hi), False
+
+# ─── 3) Sidebar sliders (with API integration) ─────
 trait_cols = [c for c in df.columns if c.startswith("GEBV_")]
 st.sidebar.header("Thresholds")
 thresholds = {}
+
 for col in trait_cols:
     lo, hi = float(df[col].min()), float(df[col].max())
+    
+    # Check if API has set a value for this slider
+    (api_min, api_max), has_api_value = get_slider_value_from_api(col, df)
+    
+    # Use API value if available, otherwise use full range
+    default_value = (api_min, api_max) if has_api_value else (lo, hi)
+    
+    # Add indicator for AI-controlled sliders
+    label = f"🤖 {col}" if has_api_value else col
+    
     thresholds[col] = st.sidebar.slider(
-        label=col,
+        label=label,
         min_value=lo,
         max_value=hi,
-        value=(lo, hi),
-        help=f"Select {col} between {lo:.2f} and {hi:.2f}"
+        value=default_value,
+        help=f"Select {col} between {lo:.2f} and {hi:.2f}" + 
+             (" - AI controlled" if has_api_value else "")
     )
 
 # ─── 4) Apply filter ──────────────────────────────────

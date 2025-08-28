@@ -1,0 +1,41 @@
+{
+  "sliders": {
+    "GEBV_Brix": {
+      "start_percent": 45.0,
+      "end_percent": 55.0,
+      "updated_at": "2025-08-28T13:50:31.528619"
+    },
+    "GEBV_yield": {
+      "start_percent": 45.0,
+      "end_percent": 55.0,
+      "updated_at": "2025-08-28T13:52:19.713349"
+    },
+    "GEBV_fruitno": {
+      "start_percent": 20.0,
+      "end_percent": 80.0,
+      "updated_at": "2025-08-28T13:51:49.093375"
+    },
+    "GEBV_Grix": {
+      "start_percent": 20.0,
+      "end_percent": 80.0,
+      "updated_at": "2025-08-28T13:52:19.706061"
+    }
+  },
+  "line_target": 10,
+  "updated_at": "2025-08-28T13:52:19.713356",
+  "GEBV_Fruit_pungency": {
+    "start_percent": 0.0,
+    "end_percent": 40.0,
+    "updated_at": "2025-08-28T14:08:43.130942"
+  },
+  "GEBV_Fruit_shape_index": {
+    "start_percent": 60.0,
+    "end_percent": 100.0,
+    "updated_at": "2025-08-28T14:08:51.216271"
+  },
+  "GEBV_Fruit_external_color_a": {
+    "start_percent": 60.0,
+    "end_percent": 100.0,
+    "updated_at": "2025-08-28T14:09:00.041985"
+  }
+}
