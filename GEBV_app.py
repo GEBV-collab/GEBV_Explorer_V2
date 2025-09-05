@@ -4,7 +4,7 @@ import pandas as pd
 import altair as alt
 import json
 import time
-
+#new
 # ─── Resolve paths relative to this script’s folder ───
 BASE = os.path.dirname(__file__)
 QCSV = os.path.join(BASE, "data", "GEBV_quality_core_16traits_n423.csv")
