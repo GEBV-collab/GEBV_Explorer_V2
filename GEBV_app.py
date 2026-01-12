@@ -132,34 +132,60 @@ st.download_button(
     file_name="filtered_lines_combined.csv",
     mime="text/csv",
 )
-# ─── 7a) LLM: Ask the dataset ─────────────────────────
-from llm_utils import ask_model
-
+# ─── 7a) Chat with Data Filtering ─────────────────────────
 st.write("---")
-st.subheader("🤖 Ask the dataset (LLM)")
-st.caption("Ask questions like: Top ten lines for GEBV_Brix")
+st.subheader("Chat with Data Filtering")
+st.caption("Use natural language to adjust trait sliders. Examples: 'Show me the top 10% for yield', 'Filter for high Brix and low pungency'")
+
+# Initialize session state for chat history
+if 'chat_result' not in st.session_state:
+    st.session_state.chat_result = None
+if 'should_rerun' not in st.session_state:
+    st.session_state.should_rerun = False
+
+# Check if we need to rerun (after sliders were adjusted)
+if st.session_state.should_rerun:
+    st.session_state.should_rerun = False
+    st.rerun()
 
 qcol1, qcol2 = st.columns([3,1])
 with qcol1:
-    user_q = st.text_input("Your question", key="llm_q", placeholder="e.g., Top 10 lines for GEBV_yield and GEBV_Brix?")
+    user_q = st.text_input("Your message", key="mcp_q", placeholder="e.g., Set yield to top 20% and show available traits")
 with qcol2:
-    run_llm = st.button("Ask")
+    run_chat = st.button("Send")
 
-if run_llm and user_q:
+if run_chat and user_q:
     try:
-        out = ask_model(user_q, df)  # uses the df already built in your app
-        st.markdown(f"**Answer:** {out['answer']}")
-        with st.expander("Show filter plan (JSON)"):
-            st.code(out["plan"], language="json")
-        st.dataframe(out["result_df"])
-        st.download_button(
-            "Download LLM-filtered CSV",
-            out["result_df"].to_csv(index=False).encode("utf-8"),
-            file_name="llm_filtered_lines.csv",
-            mime="text/csv",
-        )
+        from mcp_chat import chat_with_mcp
+
+        # Build context about current state
+        context = f"Available traits: {', '.join(trait_cols)}"
+
+        with st.spinner("Processing..."):
+            result = chat_with_mcp(user_q, context)
+
+        # Store result in session state
+        st.session_state.chat_result = result
+
+        # Check if any slider was adjusted or reset
+        slider_adjusted = any(tc['tool'] in ('adjust_slider', 'reset_all_sliders') for tc in result.get('tool_calls', []))
+
+        if slider_adjusted:
+            st.session_state.should_rerun = True
+            st.rerun()
+
     except Exception as e:
-        st.error(f"LLM query failed: {e}")
+        st.error(f"Chat failed: {e}")
+
+# Display the last chat result (persists across reruns)
+if st.session_state.chat_result:
+    result = st.session_state.chat_result
+    st.markdown(f"**Response:** {result['response']}")
+
+    if result['tool_calls']:
+        with st.expander("Tool calls executed"):
+            for tc in result['tool_calls']:
+                st.code(f"Tool: {tc['tool']}\nInput: {tc['input']}\nResult: {tc['result']}", language="yaml")
 
 # ─── 7b) Trait–Trait Correlation Heatmap ──────────────
 import seaborn as sns
