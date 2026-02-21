@@ -19,8 +19,7 @@ def adjust_slider(trait: str, start_percent: float, end_percent: float) -> str:
     Adjust a GEBV trait slider by percentile range.
 
     Args:
-        trait: Name of the GEBV trait (e.g., "GEBV_yield_y", "GEBV_fruitno_x")
-              Note: traits ending in _x come from the quality CSV; _y from the averaged agronomic CSV.
+        trait: Name of the GEBV trait (e.g., "GEBV_yield", "GEBV_fruitno", "GEBV_fruitweight")
         start_percent: Starting percentile (0-100)
         end_percent: Ending percentile (0-100)
 
