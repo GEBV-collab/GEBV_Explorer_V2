@@ -8,12 +8,19 @@ import time
 # ─── Resolve paths relative to this script's folder ───
 BASE = os.path.dirname(os.path.abspath(__file__))
 QCSV = os.path.join(BASE, "data", "GEBV_quality_global_16traits_10k_FIN.csv")
+ACSV = os.path.join(BASE, "data", "GEBVs_global_13_agronomic_traits_avg.csv")
 
 # ─── 1) App title ─────────────────────────────────────
 st.title("🧬 GEBV Explorer — Global Capsicum Collection 🌍")
 
-# ─── 2) Load data ────────────────────────────────────
-df = pd.read_csv(QCSV)
+# ─── 2) Load and merge data ──────────────────────────
+df_q = pd.read_csv(QCSV)
+df_a = pd.read_csv(ACSV)
+
+if "Group" in df_a.columns and "Group" in df_q.columns:
+    df = pd.merge(df_q, df_a, on=["Line", "Group"], how="inner")
+else:
+    df = pd.merge(df_q, df_a, on="Line", how="inner")
 
 # ─── Shared State Management ─────────────────────────
 STATE_FILE = os.path.join(BASE, "global_slider_state.json")
@@ -86,8 +93,8 @@ with st.expander("Show all lines (unfiltered)"):
 st.write("---")
 st.subheader("Scatter plot of two traits")
 
-default_x = trait_cols.index("GEBV_fruitno") if "GEBV_fruitno" in trait_cols else 0
-default_y = trait_cols.index("GEBV_yield") if "GEBV_yield" in trait_cols else 1
+default_x = trait_cols.index("GEBV_fruitno_x") if "GEBV_fruitno_x" in trait_cols else 0
+default_y = trait_cols.index("GEBV_yield_y") if "GEBV_yield_y" in trait_cols else 1
 
 col1, col2 = st.columns(2)
 with col1:
@@ -102,7 +109,7 @@ if x_sel and y_sel:
         .encode(
             x=alt.X(x_sel, type="quantitative"),
             y=alt.Y(y_sel, type="quantitative"),
-            tooltip=["LineID", x_sel, y_sel]
+            tooltip=["Line", x_sel, y_sel]
         )
     )
     highlight = (
@@ -111,7 +118,7 @@ if x_sel and y_sel:
         .encode(
             x=alt.X(x_sel, type="quantitative"),
             y=alt.Y(y_sel, type="quantitative"),
-            tooltip=["LineID", x_sel, y_sel]
+            tooltip=["Line", x_sel, y_sel]
         )
     )
     st.altair_chart(alt.layer(base, highlight).interactive(),

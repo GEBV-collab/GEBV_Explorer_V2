@@ -124,10 +124,16 @@ async def run_mcp_chat(user_message: str, context: str = "") -> dict:
 - **ALWAYS call reset_all_sliders FIRST** before setting any new filters.
 - Then adjust only the sliders the user specifically requested.
 
+## Trait Naming Convention:
+This dataset merges two CSVs with the same 13 trait columns. After merging:
+- **_x** suffix = value from the quality/phenotyping CSV
+- **_y** suffix = value from the agronomic averages CSV (averaged across 3 timepoints)
+For example: GEBV_yield_x (quality CSV) and GEBV_yield_y (agronomic average CSV).
+When a user asks for a trait without specifying, prefer the **_y** (averaged) variant.
+
 ## Guidelines:
-- When users mention traits by common names, match them to the correct GEBV trait name
-- For example: "fruit count" = GEBV_fruitno, "biomass" = GEBV_biomassfinalplant
-- Explain what each trait means when adjusting sliders
+- When users mention traits by common names or synonyms, match them to the correct GEBV trait name
+- Explain what each trait means and which variant (_x or _y) you're using when adjusting sliders
 - You can adjust multiple sliders in one response if the user requests multiple traits
 - The app will automatically update after you adjust sliders"""
 

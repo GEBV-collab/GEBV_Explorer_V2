@@ -103,8 +103,15 @@ def get_traits():
         import pandas as pd
 
         QCSV = os.path.join(BASE_DIR, "data", "GEBV_quality_global_16traits_10k_FIN.csv")
+        ACSV = os.path.join(BASE_DIR, "data", "GEBVs_global_13_agronomic_traits_avg.csv")
 
-        df = pd.read_csv(QCSV)
+        df_q = pd.read_csv(QCSV)
+        df_a = pd.read_csv(ACSV)
+
+        if "Group" in df_a.columns and "Group" in df_q.columns:
+            df = pd.merge(df_q, df_a, on=["Line", "Group"], how="inner")
+        else:
+            df = pd.merge(df_q, df_a, on="Line", how="inner")
 
         trait_cols = [c for c in df.columns if c.startswith("GEBV_")]
 
