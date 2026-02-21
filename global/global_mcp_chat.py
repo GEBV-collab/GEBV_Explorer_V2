@@ -198,9 +198,31 @@ When a user asks for a trait without specifying, prefer the **_y** (averaged) va
 def chat_with_mcp(user_message: str, context: str = "") -> dict:
     """
     Synchronous wrapper for run_mcp_chat.
-    Use this from Streamlit or other sync code.
+    Runs in a dedicated thread with its own event loop to avoid conflicts
+    with Streamlit's internal event loop (particularly on macOS).
     """
-    return asyncio.run(run_mcp_chat(user_message, context))
+    import threading
+
+    result = {}
+    exception_holder = []
+
+    def run_in_thread():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result.update(loop.run_until_complete(run_mcp_chat(user_message, context)))
+        except Exception as e:
+            exception_holder.append(e)
+        finally:
+            loop.close()
+
+    thread = threading.Thread(target=run_in_thread)
+    thread.start()
+    thread.join()
+
+    if exception_holder:
+        raise exception_holder[0]
+    return result
 
 
 if __name__ == "__main__":
