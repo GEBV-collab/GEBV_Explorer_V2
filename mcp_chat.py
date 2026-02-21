@@ -5,6 +5,7 @@ Connects to the GEBV MCP server and uses Claude API with tool use.
 """
 
 import os
+import sys
 import asyncio
 import json
 from contextlib import asynccontextmanager
@@ -22,9 +23,9 @@ load_dotenv()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 # MCP server configuration
-BASE_DIR = os.path.dirname(__file__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MCP_SERVER_SCRIPT = os.path.join(BASE_DIR, "gebv_mcp_server.py")
-PYTHON_PATH = os.path.join(BASE_DIR, "venv", "bin", "python")
+PYTHON_PATH = sys.executable  # use whatever Python is running Streamlit
 TRAIT_METADATA_PATH = os.path.join(BASE_DIR, "data", "Trait_Metadata_with_Synonyms.xlsx")
 
 
