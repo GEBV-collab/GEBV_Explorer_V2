@@ -4,18 +4,18 @@ import pandas as pd
 import altair as alt
 import json
 import time
-#new
-# ─── Resolve paths relative to this script’s folder ───
-BASE = os.path.dirname(__file__)
-QCSV = os.path.join(BASE, "data", "GEBV_quality_core_16traits_n423.csv")
-ACSV = os.path.join(BASE, "data", "GEBVs_core_13_agronomic_traits_avg.csv")
+
+# ─── Resolve paths relative to this script's folder ───
+BASE = os.path.dirname(os.path.abspath(__file__))
+QCSV = os.path.join(BASE, "data", "GEBV_quality_global_16traits_10k_FIN.csv")
+ACSV = os.path.join(BASE, "data", "GEBVs_global_13_agronomic_traits_avg.csv")
 
 # ─── 1) App title ─────────────────────────────────────
-st.title("🧬 Welcome to GEBV Explorer")
+st.title("🧬 GEBV Explorer — Global Capsicum Collection 🌍")
 
 # ─── 2) Load and merge data ──────────────────────────
-df_q = pd.read_csv(QCSV)   # ← use QCSV here
-df_a = pd.read_csv(ACSV)   # ← and ACSV here
+df_q = pd.read_csv(QCSV)
+df_a = pd.read_csv(ACSV)
 
 if "Group" in df_a.columns and "Group" in df_q.columns:
     df = pd.merge(df_q, df_a, on=["Line", "Group"], how="inner")
@@ -23,7 +23,7 @@ else:
     df = pd.merge(df_q, df_a, on="Line", how="inner")
 
 # ─── Shared State Management ─────────────────────────
-STATE_FILE = "slider_state.json"
+STATE_FILE = os.path.join(BASE, "global_slider_state.json")
 
 def load_api_slider_state():
     """Load slider state from shared file"""
@@ -38,13 +38,13 @@ def load_api_slider_state():
 def get_slider_value_from_api(trait_col, df):
     """Get slider range from API state or return full range"""
     api_state = load_api_slider_state()
-    
+
     if trait_col in api_state:
         state = api_state[trait_col]
         min_val = float(df[trait_col].quantile(state["start_percent"] / 100))
         max_val = float(df[trait_col].quantile(state["end_percent"] / 100))
         return (min_val, max_val), True
-    
+
     # Return full range if no API override
     lo, hi = float(df[trait_col].min()), float(df[trait_col].max())
     return (lo, hi), False
@@ -56,22 +56,22 @@ thresholds = {}
 
 for col in trait_cols:
     lo, hi = float(df[col].min()), float(df[col].max())
-    
+
     # Check if API has set a value for this slider
     (api_min, api_max), has_api_value = get_slider_value_from_api(col, df)
-    
+
     # Use API value if available, otherwise use full range
     default_value = (api_min, api_max) if has_api_value else (lo, hi)
-    
+
     # Add indicator for AI-controlled sliders
     label = f"🤖 {col}" if has_api_value else col
-    
+
     thresholds[col] = st.sidebar.slider(
         label=label,
         min_value=lo,
         max_value=hi,
         value=default_value,
-        help=f"Select {col} between {lo:.2f} and {hi:.2f}" + 
+        help=f"Select {col} between {lo:.2f} and {hi:.2f}" +
              (" - AI controlled" if has_api_value else "")
     )
 
@@ -93,8 +93,8 @@ with st.expander("Show all lines (unfiltered)"):
 st.write("---")
 st.subheader("Scatter plot of two traits")
 
-default_x = trait_cols.index("GEBV_Brix") if "GEBV_Brix" in trait_cols else 0
-default_y = trait_cols.index("GEBV_yield") if "GEBV_yield" in trait_cols else 1
+default_x = trait_cols.index("GEBV_fruitno_x") if "GEBV_fruitno_x" in trait_cols else 0
+default_y = trait_cols.index("GEBV_yield_y") if "GEBV_yield_y" in trait_cols else 1
 
 col1, col2 = st.columns(2)
 with col1:
@@ -129,34 +129,37 @@ st.write("---")
 st.download_button(
     "Download filtered CSV",
     filtered.to_csv(index=False).encode("utf-8"),
-    file_name="filtered_lines_combined.csv",
+    file_name="filtered_global_lines.csv",
     mime="text/csv",
 )
-# ─── 7a) Chat with Data Filtering ─────────────────────────
+
+# ─── 9) Chat with Data Filtering ─────────────────────────
 st.write("---")
 st.subheader("Chat with Data Filtering")
-st.caption("Use natural language to adjust trait sliders. Examples: 'Show me the top 10% for yield', 'Filter for high Brix and low pungency'")
+st.caption("Use natural language to adjust trait sliders. Examples: 'Show me the top 10% for yield', 'Filter for high fruit number'")
 
 # Initialize session state for chat history
-if 'chat_result' not in st.session_state:
-    st.session_state.chat_result = None
-if 'should_rerun' not in st.session_state:
-    st.session_state.should_rerun = False
+if 'global_chat_result' not in st.session_state:
+    st.session_state.global_chat_result = None
+if 'global_should_rerun' not in st.session_state:
+    st.session_state.global_should_rerun = False
 
 # Check if we need to rerun (after sliders were adjusted)
-if st.session_state.should_rerun:
-    st.session_state.should_rerun = False
+if st.session_state.global_should_rerun:
+    st.session_state.global_should_rerun = False
     st.rerun()
 
-qcol1, qcol2 = st.columns([3,1])
+qcol1, qcol2 = st.columns([3, 1])
 with qcol1:
-    user_q = st.text_input("Your message", key="mcp_q", placeholder="e.g., Set yield to top 20% and show available traits")
+    user_q = st.text_input("Your message", key="global_mcp_q", placeholder="e.g., Set yield to top 20% and show available traits")
 with qcol2:
     run_chat = st.button("Send")
 
 if run_chat and user_q:
     try:
-        from mcp_chat import chat_with_mcp
+        import sys
+        sys.path.insert(0, BASE)
+        from global_mcp_chat import chat_with_mcp
 
         # Build context about current state
         context = f"Available traits: {', '.join(trait_cols)}"
@@ -165,21 +168,21 @@ if run_chat and user_q:
             result = chat_with_mcp(user_q, context)
 
         # Store result in session state
-        st.session_state.chat_result = result
+        st.session_state.global_chat_result = result
 
         # Check if any slider was adjusted or reset
         slider_adjusted = any(tc['tool'] in ('adjust_slider', 'reset_all_sliders') for tc in result.get('tool_calls', []))
 
         if slider_adjusted:
-            st.session_state.should_rerun = True
+            st.session_state.global_should_rerun = True
             st.rerun()
 
     except Exception as e:
         st.error(f"Chat failed: {e}")
 
 # Display the last chat result (persists across reruns)
-if st.session_state.chat_result:
-    result = st.session_state.chat_result
+if st.session_state.global_chat_result:
+    result = st.session_state.global_chat_result
     st.markdown(f"**Response:** {result['response']}")
 
     if result['tool_calls']:
@@ -187,14 +190,13 @@ if st.session_state.chat_result:
             for tc in result['tool_calls']:
                 st.code(f"Tool: {tc['tool']}\nInput: {tc['input']}\nResult: {tc['result']}", language="yaml")
 
-# ─── 7b) Trait–Trait Correlation Heatmap ──────────────
+# ─── 10) Trait–Trait Correlation Heatmap ──────────────
 import seaborn as sns
 import matplotlib.pyplot as plt
 
 st.write("---")
 st.subheader("Trait–Trait Correlation Heatmap")
 
-# Compute correlation matrix for selected traits
 corr = df[trait_cols].corr()
 
 fig, ax = plt.subplots(figsize=(10, 8))
@@ -206,7 +208,7 @@ sns.heatmap(
     center=0,
     ax=ax,
     cbar_kws={'label': 'Pearson Correlation'},
-    annot_kws={"size": 5}  # 👈 Set annotation font size here
+    annot_kws={"size": 5}
 )
 
 st.pyplot(fig)

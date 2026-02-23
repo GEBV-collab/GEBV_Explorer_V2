@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+      "gebv": {
+        "type": "stdio",
+        "command": "./venv/bin/python",
+        "args": [
+          "./gebv_mcp_server.py"
+        ]
+      }
+    }
+}

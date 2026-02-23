@@ -1,3 +1,13 @@
 streamlit
 pandas
 altair
+openai
+dotenv
+fastmcp
+flask
+requests
+anthropic
+mcp
+openpyxl
+seaborn
+matplotlib
