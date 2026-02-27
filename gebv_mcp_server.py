@@ -136,6 +136,6 @@ def get_current_filters() -> str:
 
 
 if __name__ == "__main__":
-    print("🌶️  GEBV Explorer MCP Server starting...")
+    print("GEBV Explorer MCP Server starting...")
     print(f"Will connect to API server at: {API_BASE_URL}")
     mcp.run()

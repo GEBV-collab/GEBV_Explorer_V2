@@ -8,7 +8,12 @@ import os
 import sys
 import asyncio
 import json
+import platform
 from dotenv import load_dotenv
+
+# Windows requires ProactorEventLoop for subprocess support
+if platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 import anthropic
 from mcp import ClientSession, StdioServerParameters
@@ -207,7 +212,11 @@ def chat_with_mcp(user_message: str, context: str = "") -> dict:
     exception_holder = []
 
     def run_in_thread():
-        loop = asyncio.new_event_loop()
+        # On Windows, ensure we use ProactorEventLoop for subprocess support
+        if platform.system() == "Windows":
+            loop = asyncio.ProactorEventLoop()
+        else:
+            loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
             result.update(loop.run_until_complete(run_mcp_chat(user_message, context)))

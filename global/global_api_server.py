@@ -126,7 +126,7 @@ def get_traits():
 
 if __name__ == '__main__':
     load_state()
-    print("🌍 GEBV Global API Server starting on port 5002...")
+    print("GEBV Global API Server starting on port 5002...")
     print("Endpoints:")
     print("  GET  /health - Health check")
     print("  GET  /traits - Get available GEBV trait names")

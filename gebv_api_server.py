@@ -205,7 +205,7 @@ def trait_info():
 
 if __name__ == '__main__':
     load_state()
-    print("🌶️  GEBV API Server starting...")
+    print("GEBV API Server starting...")
     print("Endpoints:")
     print("  GET  /health - Health check") 
     print("  GET  /traits - Get available GEBV trait names")
