@@ -76,20 +76,22 @@ def convert_mcp_tools_to_claude(mcp_tools) -> list:
     return claude_tools
 
 
-async def run_mcp_chat(user_message: str, context: str = "") -> dict:
+async def run_mcp_chat(user_message: str, context: str = "", api_key: str = None) -> dict:
     """
     Run a chat with Claude using MCP tools.
 
     Args:
         user_message: The user's question or command
         context: Optional context about the current data/state
+        api_key: Anthropic API key. Falls back to ANTHROPIC_API_KEY env var if not provided.
 
     Returns:
         dict with 'response' (text) and 'tool_calls' (list of executed tools)
     """
-    if not ANTHROPIC_API_KEY:
+    effective_key = api_key or ANTHROPIC_API_KEY
+    if not effective_key:
         return {
-            "response": "Error: ANTHROPIC_API_KEY not set in .env file",
+            "response": "No API key provided. Enter your Anthropic API key in the sidebar to use this feature.",
             "tool_calls": []
         }
 
@@ -108,7 +110,7 @@ async def run_mcp_chat(user_message: str, context: str = "") -> dict:
             mcp_tools = await session.list_tools()
             claude_tools = convert_mcp_tools_to_claude(mcp_tools)
 
-            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            client = anthropic.Anthropic(api_key=effective_key)
 
             system_prompt = f"""You are an assistant for the GEBV Explorer application, which visualizes genomic estimated breeding values (GEBVs) for pepper/Capsicum crop traits from the **Global Capsicum Collection** (~10,232 accessions, including control lines).
 
@@ -200,7 +202,7 @@ When a user asks for a trait without specifying, prefer the **_y** (averaged) va
     }
 
 
-def chat_with_mcp(user_message: str, context: str = "") -> dict:
+def chat_with_mcp(user_message: str, context: str = "", api_key: str = None) -> dict:
     """
     Synchronous wrapper for run_mcp_chat.
     Runs in a dedicated thread with its own event loop to avoid conflicts
@@ -219,7 +221,7 @@ def chat_with_mcp(user_message: str, context: str = "") -> dict:
             loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            result.update(loop.run_until_complete(run_mcp_chat(user_message, context)))
+            result.update(loop.run_until_complete(run_mcp_chat(user_message, context, api_key)))
         except Exception as e:
             exception_holder.append(e)
         finally:
