@@ -33,12 +33,7 @@ git clone https://github.com/ahmccormick/GEBV_Explorer_V2.git
 cd GEBV_Explorer_V2
 ```
 
-**2. Create a `.env` file with your API key**
-```bash
-echo "ANTHROPIC_API_KEY=your-api-key-here" > .env
-```
-
-**3. Start the apps**
+**2. Start the apps**
 ```bash
 docker compose up
 ```
@@ -48,6 +43,13 @@ Both apps will be available at:
 - Global Collection: http://localhost:8502
 
 To stop: press `Ctrl+C`, then `docker compose down`.
+
+**Providing your API key:**
+
+You can enter your Anthropic API key directly in the app sidebar — no `.env` file needed. Alternatively, create a `.env` file to pre-fill it automatically:
+```bash
+echo "ANTHROPIC_API_KEY=your-api-key-here" > .env
+```
 
 > **Note:** The first `docker compose up` will take a few minutes to build the image and download dependencies. Subsequent starts are fast.
 

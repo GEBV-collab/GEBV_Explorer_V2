@@ -4,7 +4,7 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     command: ["./start_core.sh"]
 
@@ -13,6 +13,6 @@ services:
     ports:
       - "8502:8501"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     command: ["./start_global.sh"]

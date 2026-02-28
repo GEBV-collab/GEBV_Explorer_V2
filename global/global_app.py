@@ -49,6 +49,21 @@ def get_slider_value_from_api(trait_col, df):
     lo, hi = float(df[trait_col].min()), float(df[trait_col].max())
     return (lo, hi), False
 
+# ─── API Key sidebar input ────────────────────────────
+_server_key = os.getenv("ANTHROPIC_API_KEY", "")
+st.sidebar.header("API Key")
+_user_api_key = st.sidebar.text_input(
+    "Anthropic API Key",
+    type="password",
+    key="user_api_key",
+    placeholder="Using server key" if _server_key else "sk-ant-...",
+    help="Required for Chat with Data Filtering. Get your key at https://console.anthropic.com/",
+)
+_effective_api_key = _user_api_key or _server_key
+if not _effective_api_key:
+    st.sidebar.warning("Enter an API key above to enable the chat feature.")
+st.sidebar.divider()
+
 # ─── 3) Sidebar sliders (with API integration) ─────
 trait_cols = [c for c in df.columns if c.startswith("GEBV_")]
 st.sidebar.header("Thresholds")
@@ -165,7 +180,7 @@ if run_chat and user_q:
         context = f"Available traits: {', '.join(trait_cols)}"
 
         with st.spinner("Processing..."):
-            result = chat_with_mcp(user_q, context)
+            result = chat_with_mcp(user_q, context, api_key=_effective_api_key or None)
 
         # Store result in session state
         st.session_state.global_chat_result = result
