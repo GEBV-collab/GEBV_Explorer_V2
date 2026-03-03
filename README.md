@@ -143,8 +143,8 @@ Use natural language commands to adjust filters:
 ## Data
 
 ### Core Collection
-- **Quality traits** (16): `data/GEBV_quality_core_16traits_n423.csv`
-- **Agronomic traits** (13): `data/GEBVs_core_13_agronomic_traits_avg.csv` (averaged over three experimental timepoints)
+- **Quality traits** (23): `data/GEBVs_ag_73traitmean_n423.csv`
+- **Agronomic traits** (73): `data/GEBVs_quality_23trait_n423.csv` (averaged over three experimental timepoints)
 - **Trait metadata**: `data/Trait_Metadata_with_Synonyms.xlsx`
 
 ### Global Collection
@@ -152,10 +152,10 @@ Both CSVs in `global/data/` contain the same 13 GEBV traits measured under diffe
 - `_x` suffix: value from the phenotyping/quality CSV
 - `_y` suffix: value from the agronomic averages CSV (averaged over three experimental timepoints)
 
-This results in 26 total trait columns (13 × 2). The chat assistant defaults to the `_y` (averaged) variant when a trait is requested without a suffix.
+This results in 96 total trait columns. The chat assistant defaults to the `_y` (averaged) variant when a trait is requested without a suffix.
 
-- `global/data/GEBV_quality_global_16traits_10k_FIN.csv`
-- `global/data/GEBVs_global_13_agronomic_traits_avg.csv`
+- `global/data/GEBVs_quality_23trait_n10026.csv`
+- `global/data/GEBVs_ag_73traitmean_n10024.csv`
 
 ---
 
