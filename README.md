@@ -148,7 +148,7 @@ Use natural language commands to adjust filters:
 - **Trait metadata**: `data/Trait_Metadata_with_Synonyms.xlsx`
 
 ### Global Collection
-Both CSVs in `global/data/` contain the same 13 GEBV traits measured under different conditions. After merging, each trait appears with a suffix indicating its source:
+Both CSVs in `global/data/` contain the same 96 GEBV traits measured. After merging, each trait appears with a suffix indicating its source:
 - `_x` suffix: value from the phenotyping/quality CSV
 - `_y` suffix: value from the agronomic averages CSV (averaged over three experimental timepoints)
 
