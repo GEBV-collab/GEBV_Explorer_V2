@@ -7,8 +7,8 @@ import time
 
 # ─── Resolve paths relative to this script's folder ───
 BASE = os.path.dirname(os.path.abspath(__file__))
-QCSV = os.path.join(BASE, "data", "GEBV_quality_global_16traits_10k_FIN.csv")
-ACSV = os.path.join(BASE, "data", "GEBVs_global_13_agronomic_traits_avg.csv")
+QCSV = os.path.join(BASE, "data", "GEBVs_quality_23trait_n10026.csv")
+ACSV = os.path.join(BASE, "data", "GEBVs_ag_73traitmean_n10024.csv")
 
 # ─── 1) App title ─────────────────────────────────────
 st.title("🧬 GEBV Explorer — Global Capsicum Collection 🌍")

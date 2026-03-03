@@ -7,8 +7,8 @@ import time
 #new
 # ─── Resolve paths relative to this script’s folder ───
 BASE = os.path.dirname(__file__)
-QCSV = os.path.join(BASE, "data", "GEBV_quality_core_16traits_n423.csv")
-ACSV = os.path.join(BASE, "data", "GEBVs_core_13_agronomic_traits_avg.csv")
+QCSV = os.path.join(BASE, "data", "GEBVs_quality_23trait_n423.csv")
+ACSV = os.path.join(BASE, "data", "GEBVs_ag_73traitmean_n423.csv")
 
 # ─── 1) App title ─────────────────────────────────────
 st.title("🧬 Welcome to GEBV Explorer")
@@ -38,13 +38,13 @@ def load_api_slider_state():
 def get_slider_value_from_api(trait_col, df):
     """Get slider range from API state or return full range"""
     api_state = load_api_slider_state()
-    
+
     if trait_col in api_state:
         state = api_state[trait_col]
         min_val = float(df[trait_col].quantile(state["start_percent"] / 100))
         max_val = float(df[trait_col].quantile(state["end_percent"] / 100))
         return (min_val, max_val), True
-    
+
     # Return full range if no API override
     lo, hi = float(df[trait_col].min()), float(df[trait_col].max())
     return (lo, hi), False
@@ -71,22 +71,22 @@ thresholds = {}
 
 for col in trait_cols:
     lo, hi = float(df[col].min()), float(df[col].max())
-    
+
     # Check if API has set a value for this slider
     (api_min, api_max), has_api_value = get_slider_value_from_api(col, df)
-    
+
     # Use API value if available, otherwise use full range
     default_value = (api_min, api_max) if has_api_value else (lo, hi)
-    
+
     # Add indicator for AI-controlled sliders
     label = f"🤖 {col}" if has_api_value else col
-    
+
     thresholds[col] = st.sidebar.slider(
         label=label,
         min_value=lo,
         max_value=hi,
         value=default_value,
-        help=f"Select {col} between {lo:.2f} and {hi:.2f}" + 
+        help=f"Select {col} between {lo:.2f} and {hi:.2f}" +
              (" - AI controlled" if has_api_value else "")
     )
 

@@ -102,8 +102,8 @@ def get_traits():
     try:
         import pandas as pd
 
-        QCSV = os.path.join(BASE_DIR, "data", "GEBV_quality_global_16traits_10k_FIN.csv")
-        ACSV = os.path.join(BASE_DIR, "data", "GEBVs_global_13_agronomic_traits_avg.csv")
+        QCSV = os.path.join(BASE_DIR, "data", "GEBVs_quality_23trait_n10026.csv")
+        ACSV = os.path.join(BASE_DIR, "data", "GEBVs_ag_73traitmean_n10024.csv")
 
         df_q = pd.read_csv(QCSV)
         df_a = pd.read_csv(ACSV)

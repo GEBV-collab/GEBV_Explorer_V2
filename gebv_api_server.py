@@ -44,27 +44,27 @@ def get_sliders():
 def set_slider(trait):
     """Set a specific slider value"""
     data = request.get_json()
-    
+
     if not data or 'start_percent' not in data or 'end_percent' not in data:
         return jsonify({"error": "Missing start_percent or end_percent"}), 400
-    
+
     start = float(data['start_percent'])
     end = float(data['end_percent'])
-    
+
     if not (0 <= start <= 100) or not (0 <= end <= 100):
         return jsonify({"error": "Percentages must be between 0 and 100"}), 400
-        
+
     if start > end:
         return jsonify({"error": "start_percent cannot be greater than end_percent"}), 400
-    
+
     slider_state[trait] = {
         "start_percent": start,
         "end_percent": end,
         "updated_at": datetime.now().isoformat()
     }
-    
+
     save_state()
-    
+
     return jsonify({
         "message": f"Set {trait} slider to {start}% - {end}%",
         "trait": trait,
@@ -96,27 +96,27 @@ def get_traits():
     try:
         import pandas as pd
         import os
-        
+
         # Load the data to get actual trait columns
         BASE = os.path.dirname(__file__)
-        QCSV = os.path.join(BASE, "data", "GEBV_quality_core_16traits_n423.csv")
-        ACSV = os.path.join(BASE, "data", "GEBVs_core_13_agronomic_traits_avg.csv")
-        
+        QCSV = os.path.join(BASE, "data", "GEBVs_quality_23trait_n423.csv")
+        ACSV = os.path.join(BASE, "data", "GEBVs_ag_73traitmean_n423.csv")
+
         df_q = pd.read_csv(QCSV)
         df_a = pd.read_csv(ACSV)
-        
+
         if "Group" in df_a.columns and "Group" in df_q.columns:
             df = pd.merge(df_q, df_a, on=["Line", "Group"], how="inner")
         else:
             df = pd.merge(df_q, df_a, on="Line", how="inner")
-        
+
         trait_cols = [c for c in df.columns if c.startswith("GEBV_")]
-        
+
         return jsonify({
             "traits": trait_cols,
             "count": len(trait_cols)
         })
-        
+
     except Exception as e:
         return jsonify({"error": f"Could not load traits: {str(e)}"}), 500
 
@@ -207,7 +207,7 @@ if __name__ == '__main__':
     load_state()
     print("GEBV API Server starting...")
     print("Endpoints:")
-    print("  GET  /health - Health check") 
+    print("  GET  /health - Health check")
     print("  GET  /traits - Get available GEBV trait names")
     print("  POST /traitinfo - Query trait metadata with natural language")
     print("  GET  /sliders - Get all slider states")
