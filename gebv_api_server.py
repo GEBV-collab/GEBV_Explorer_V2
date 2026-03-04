@@ -19,6 +19,7 @@ slider_state = {}
 # In-memory store for last Smith-Hazel result
 smith_hazel_result = None
 state_file = "slider_state.json"
+SMITH_HAZEL_STATE_FILE = "smith_hazel_result.json"
 
 def load_state():
     """Load slider state from file if it exists"""
@@ -303,6 +304,10 @@ def compute_smith_hazel_index():
             "P = G + E where E = 0.5*diag(G), assuming mean h²≈0.5."
         )
     }
+
+    # Persist to file so Streamlit can pick it up on rerun
+    with open(SMITH_HAZEL_STATE_FILE, 'w') as f:
+        json.dump(smith_hazel_result, f, indent=2)
 
     return jsonify(smith_hazel_result)
 

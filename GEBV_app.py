@@ -24,6 +24,7 @@ else:
 
 # ─── Shared State Management ─────────────────────────
 STATE_FILE = "slider_state.json"
+SMITH_HAZEL_STATE_FILE = "smith_hazel_result.json"
 
 def load_api_slider_state():
     """Load slider state from shared file"""
@@ -182,10 +183,11 @@ if run_chat and user_q:
         # Store result in session state
         st.session_state.chat_result = result
 
-        # Check if any slider was adjusted or reset
-        slider_adjusted = any(tc['tool'] in ('adjust_slider', 'reset_all_sliders') for tc in result.get('tool_calls', []))
+        # Check if any interactive tool was used (sliders or index)
+        interactive_tools = ('adjust_slider', 'reset_all_sliders', 'compute_smith_hazel_index')
+        tool_used = any(tc['tool'] in interactive_tools for tc in result.get('tool_calls', []))
 
-        if slider_adjusted:
+        if tool_used:
             st.session_state.should_rerun = True
             st.rerun()
 
@@ -234,10 +236,11 @@ st.subheader("Smith-Hazel Selection Index")
 st.caption(
     "The Smith-Hazel index accounts for genetic and phenotypic correlations between traits "
     "when ranking lines. Supply economic weights (how much you value each trait) and the "
-    "index derives adjusted coefficients via b = P⁻¹Gw. Requires at least 2 traits."
+    "index derives adjusted coefficients via b = P\u207b\u00b9Gw. Requires at least 2 traits. "
+    "You can also ask the chat to compute this for you."
 )
 
-with st.expander("Configure weights and compute index", expanded=True):
+with st.expander("Configure weights and compute index", expanded=False):
     st.markdown("**Set economic weights** (leave at 0 to exclude a trait):")
 
     n_cols = 4
@@ -258,21 +261,13 @@ with st.expander("Configure weights and compute index", expanded=True):
     sh_top_n = st.number_input("Top N lines to show", min_value=1, max_value=500, value=20, step=1, key="sh_top_n")
     sh_btn = st.button("Compute Smith-Hazel Index")
 
+# Compute from button press
+sh_data = None
 if sh_btn:
     active_sh = {t: w for t, w in sh_weights.items() if w != 0.0}
     if len(active_sh) < 2:
         st.warning("Smith-Hazel requires at least 2 traits with non-zero weights.")
     else:
-        # Show correlation heatmap for selected traits
-        st.markdown("**Trait correlations for selected traits** (this is why S-H differs from simple weighting):")
-        selected_corr = df[list(active_sh.keys())].corr()
-        fig_sh, ax_sh = plt.subplots(figsize=(max(4, len(active_sh)), max(3, len(active_sh) - 1)))
-        sns.heatmap(
-            selected_corr, annot=True, fmt=".2f", cmap="coolwarm",
-            center=0, ax=ax_sh, cbar_kws={"label": "Pearson r"}
-        )
-        st.pyplot(fig_sh)
-
         try:
             resp = _req.post(
                 "http://127.0.0.1:5001/smith_hazel_index",
@@ -281,46 +276,90 @@ if sh_btn:
             )
             if resp.status_code == 200:
                 sh_data = resp.json()
-                sh_df = pd.DataFrame(sh_data["ranked_lines"])
-                sh_coeffs = sh_data.get("index_coefficients", {})
-                econ_w = sh_data.get("economic_weights", {})
-
-                st.success(f"Index computed. {sh_data.get('n_lines_total', '?')} lines evaluated.")
-                st.caption(sh_data.get("note", ""))
-
-                # Side-by-side: economic weights vs derived index coefficients
-                st.markdown("**Economic weights → derived index coefficients** (effect of trait correlations):")
-                coeff_df = pd.DataFrame({
-                    "Trait": list(econ_w.keys()),
-                    "Economic Weight": [econ_w[t] for t in econ_w],
-                    "Index Coefficient (b)": [sh_coeffs.get(t, 0) for t in econ_w],
-                })
-                st.dataframe(coeff_df, use_container_width=True)
-
-                # Ranked table
-                st.dataframe(sh_df, use_container_width=True)
-
-                # Bar chart
-                bar_sh = (
-                    alt.Chart(sh_df)
-                    .mark_bar()
-                    .encode(
-                        x=alt.X("SmithHazel_Index:Q", title="Smith-Hazel Index Score"),
-                        y=alt.Y("Line:N", sort="-x", title="Line"),
-                        tooltip=["Line"] + list(active_sh.keys()) + ["SmithHazel_Index"]
-                    )
-                    .properties(title=f"Top {int(sh_top_n)} Lines — Smith-Hazel Index")
-                )
-                st.altair_chart(bar_sh, use_container_width=True)
-
-                st.download_button(
-                    "Download Smith-Hazel results CSV",
-                    sh_df.to_csv(index=False).encode("utf-8"),
-                    file_name="smith_hazel_results.csv",
-                    mime="text/csv",
-                )
             else:
                 st.error(f"API error: {resp.json().get('error', 'Unknown error')}")
         except Exception as e:
             st.error(f"Could not reach API server: {e}")
             st.info("Make sure gebv_api_server.py is running on port 5001.")
+
+# If no button press, check for persisted result (from chat/MCP)
+if sh_data is None:
+    try:
+        if os.path.exists(SMITH_HAZEL_STATE_FILE):
+            with open(SMITH_HAZEL_STATE_FILE, 'r') as f:
+                sh_data = json.load(f)
+    except Exception:
+        pass
+
+# Display results (from button OR persisted state)
+if sh_data and "ranked_lines" in sh_data:
+    sh_df = pd.DataFrame(sh_data["ranked_lines"])
+    sh_coeffs = sh_data.get("index_coefficients", {})
+    econ_w = sh_data.get("economic_weights", {})
+    active_traits = list(econ_w.keys())
+
+    # Clear explanation of what happened and why the table is ordered this way
+    st.info(
+        f"**How these results are ordered:** Lines are ranked from highest to lowest "
+        f"Smith-Hazel index score. This score is a composite of "
+        f"{', '.join(t.replace('GEBV_', '') for t in active_traits)} "
+        f"weighted by your economic priorities, but **adjusted for trait correlations**. "
+        f"The index accounts for how traits co-vary genetically — if two traits you "
+        f"value are already positively correlated, the index avoids double-counting them. "
+        f"Rank 1 = best overall line given your priorities."
+    )
+
+    st.caption(f"Computed at: {sh_data.get('computed_at', 'unknown')} | "
+               f"{sh_data.get('n_lines_total', '?')} lines evaluated | "
+               f"{sh_data.get('note', '')}")
+
+    # Correlation heatmap for selected traits
+    if len(active_traits) >= 2:
+        st.markdown("**Trait correlations** (explains why index coefficients differ from your weights):")
+        selected_corr = df[active_traits].corr()
+        fig_sh, ax_sh = plt.subplots(figsize=(max(4, len(active_traits)), max(3, len(active_traits) - 1)))
+        sns.heatmap(
+            selected_corr, annot=True, fmt=".2f", cmap="coolwarm",
+            center=0, ax=ax_sh, cbar_kws={"label": "Pearson r"}
+        )
+        st.pyplot(fig_sh)
+
+    # Side-by-side: economic weights vs derived index coefficients
+    st.markdown("**Your weights vs. derived index coefficients** (how correlations modified your priorities):")
+    coeff_df = pd.DataFrame({
+        "Trait": [t.replace("GEBV_", "") for t in econ_w],
+        "Your Economic Weight": [econ_w[t] for t in econ_w],
+        "Derived Index Coefficient (b)": [sh_coeffs.get(t, 0) for t in econ_w],
+    })
+    st.dataframe(coeff_df, use_container_width=True)
+
+    # Ranked table
+    st.markdown(f"**Top {len(sh_df)} lines** (sorted by Smith-Hazel index score, highest first):")
+    st.dataframe(sh_df, use_container_width=True)
+
+    # Bar chart
+    bar_sh = (
+        alt.Chart(sh_df)
+        .mark_bar()
+        .encode(
+            x=alt.X("SmithHazel_Index:Q", title="Smith-Hazel Index Score"),
+            y=alt.Y("Line:N", sort="-x", title="Line"),
+            tooltip=["Line"] + active_traits + ["SmithHazel_Index"]
+        )
+        .properties(title=f"Top {len(sh_df)} Lines — Smith-Hazel Index (highest = best)")
+    )
+    st.altair_chart(bar_sh, use_container_width=True)
+
+    col_dl, col_clear = st.columns(2)
+    with col_dl:
+        st.download_button(
+            "Download Smith-Hazel results CSV",
+            sh_df.to_csv(index=False).encode("utf-8"),
+            file_name="smith_hazel_results.csv",
+            mime="text/csv",
+        )
+    with col_clear:
+        if st.button("Clear index results", key="sh_clear"):
+            if os.path.exists(SMITH_HAZEL_STATE_FILE):
+                os.remove(SMITH_HAZEL_STATE_FILE)
+            st.rerun()
