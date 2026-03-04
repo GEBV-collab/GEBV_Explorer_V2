@@ -24,6 +24,7 @@ else:
 
 # ─── Shared State Management ─────────────────────────
 STATE_FILE = os.path.join(BASE, "global_slider_state.json")
+WEIGHTED_INDEX_STATE_FILE = os.path.join(BASE, "global_weighted_index_result.json")
 
 def load_api_slider_state():
     """Load slider state from shared file"""
@@ -185,10 +186,11 @@ if run_chat and user_q:
         # Store result in session state
         st.session_state.global_chat_result = result
 
-        # Check if any slider was adjusted or reset
-        slider_adjusted = any(tc['tool'] in ('adjust_slider', 'reset_all_sliders') for tc in result.get('tool_calls', []))
+        # Check if any interactive tool was used
+        interactive_tools = ('adjust_slider', 'reset_all_sliders', 'compute_selection_index')
+        tool_used = any(tc['tool'] in interactive_tools for tc in result.get('tool_calls', []))
 
-        if slider_adjusted:
+        if tool_used:
             st.session_state.global_should_rerun = True
             st.rerun()
 
@@ -227,3 +229,112 @@ sns.heatmap(
 )
 
 st.pyplot(fig)
+
+# ─── Weighted Selection Index ──────────────────────────
+import requests as _req
+
+st.write("---")
+st.subheader("Weighted Selection Index")
+st.caption(
+    "Rank lines by a composite score I = \u03a3(w\u2c7c \u00d7 z\u1d62\u2c7c), where z\u1d62\u2c7c is the "
+    "z-score of trait j for line i. Assign weights to traits you care about "
+    "(leave at 0 to exclude). Weights are normalized automatically. "
+    "You can also ask the chat to compute this for you."
+)
+
+with st.expander("Configure weights and compute index", expanded=False):
+    st.markdown("**Set trait weights** (0 = exclude):")
+
+    n_cols = 4
+    weight_inputs = {}
+    trait_chunks = [trait_cols[i:i+n_cols] for i in range(0, len(trait_cols), n_cols)]
+    for chunk in trait_chunks:
+        cols = st.columns(len(chunk))
+        for c, trait in zip(cols, chunk):
+            weight_inputs[trait] = c.number_input(
+                label=trait.replace("GEBV_", ""),
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=0.1,
+                key=f"wt_global_{trait}"
+            )
+
+    top_n_index = st.number_input(
+        "Top N lines to show", min_value=1, max_value=500, value=20, step=1, key="wt_global_top_n"
+    )
+    compute_btn = st.button("Compute Index")
+
+idx_data = None
+if compute_btn:
+    active_weights = {t: w for t, w in weight_inputs.items() if w != 0.0}
+    if not active_weights:
+        st.warning("Assign a non-zero weight to at least one trait.")
+    else:
+        try:
+            resp = _req.post(
+                "http://127.0.0.1:5002/selection_index",
+                json={"trait_weights": active_weights, "top_n": int(top_n_index)},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                idx_data = resp.json()
+            else:
+                st.error(f"API error: {resp.json().get('error', 'Unknown error')}")
+        except Exception as e:
+            st.error(f"Could not reach API server: {e}")
+            st.info("Make sure global_api_server.py is running on port 5002.")
+
+if idx_data is None:
+    try:
+        if os.path.exists(WEIGHTED_INDEX_STATE_FILE):
+            with open(WEIGHTED_INDEX_STATE_FILE, 'r') as f:
+                idx_data = json.load(f)
+    except Exception:
+        pass
+
+if idx_data and "results" in idx_data:
+    idx_df = pd.DataFrame(idx_data["results"])
+    nw = idx_data.get("normalized_weights", {})
+    raw_w = idx_data.get("trait_weights", {})
+    active_traits = list(raw_w.keys())
+
+    nw_str = ", ".join(f"{t.replace('GEBV_', '')}={v:.1%}" for t, v in nw.items())
+    st.info(
+        f"**How these results are ordered:** Lines are ranked from highest to lowest "
+        f"composite index score. Each trait is z-score standardised (mean=0, sd=1) so "
+        f"they are on the same scale, then combined using your normalised weights: "
+        f"{nw_str}. A line with score 1.5 is 1.5 standard deviations above average "
+        f"across your chosen traits. Rank 1 = best overall line given your priorities."
+    )
+
+    st.caption(f"Computed at: {idx_data.get('computed_at', 'unknown')}")
+
+    st.markdown(f"**Top {len(idx_df)} lines** (sorted by index score, highest first):")
+    st.dataframe(idx_df, use_container_width=True)
+
+    bar = (
+        alt.Chart(idx_df)
+        .mark_bar()
+        .encode(
+            x=alt.X("index_score:Q", title="Index Score (z-score units)"),
+            y=alt.Y("Line:N", sort="-x", title="Line"),
+            tooltip=["rank", "Line"] + active_traits + ["index_score"],
+        )
+        .properties(title=f"Top {len(idx_df)} Lines \u2014 Weighted Selection Index (highest = best)")
+    )
+    st.altair_chart(bar, use_container_width=True)
+
+    col_dl, col_clear = st.columns(2)
+    with col_dl:
+        st.download_button(
+            "Download index results CSV",
+            idx_df.to_csv(index=False).encode("utf-8"),
+            file_name="weighted_index_global_results.csv",
+            mime="text/csv",
+        )
+    with col_clear:
+        if st.button("Clear index results", key="wt_global_clear"):
+            if os.path.exists(WEIGHTED_INDEX_STATE_FILE):
+                os.remove(WEIGHTED_INDEX_STATE_FILE)
+            st.rerun()

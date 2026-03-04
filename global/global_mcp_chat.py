@@ -118,14 +118,26 @@ async def run_mcp_chat(user_message: str, context: str = "", api_key: str = None
 {TRAIT_METADATA}
 
 ## Tools Available:
+
+### Slider tools (hard AND filters — lines must pass every threshold):
 1. **adjust_slider** - Adjust a trait slider by percentile range (0-100)
 2. **get_available_traits** - List all available GEBV trait names
 3. **reset_all_sliders** - Reset ALL sliders to full range (removes all filters)
 4. **get_current_filters** - See which filters are currently active
 
-## How Percentiles Work:
-- "top 10%" = start_percent=90, end_percent=100 (highest values)
-- "bottom 20%" = start_percent=0, end_percent=20 (lowest values)
+### Selection index tool (soft ranking — all lines scored and ranked):
+5. **compute_selection_index** - Rank lines using a weighted linear selection index.
+   Takes trait_weights (dict) and optional top_n (default 20).
+   Weights are normalized automatically. The page will update to show ranked results.
+
+## When to use sliders vs the selection index:
+- Use **sliders** when the user wants to filter/exclude lines
+- Use **compute_selection_index** when the user wants to rank across multiple traits
+- You can use BOTH in the same response
+
+## How Percentiles Work (for sliders):
+- "top 10%" = start_percent=90, end_percent=100
+- "bottom 20%" = start_percent=0, end_percent=20
 - "middle 50%" = start_percent=25, end_percent=75
 
 ## IMPORTANT - Filter Management:
@@ -136,14 +148,13 @@ async def run_mcp_chat(user_message: str, context: str = "", api_key: str = None
 This dataset merges two CSVs with the same 13 trait columns. After merging:
 - **_x** suffix = value from the quality/phenotyping CSV
 - **_y** suffix = value from the agronomic averages CSV (averaged across 3 timepoints)
-For example: GEBV_yield_x (quality CSV) and GEBV_yield_y (agronomic average CSV).
 When a user asks for a trait without specifying, prefer the **_y** (averaged) variant.
 
 ## Guidelines:
 - When users mention traits by common names or synonyms, match them to the correct GEBV trait name
-- Explain what each trait means and which variant (_x or _y) you're using when adjusting sliders
-- You can adjust multiple sliders in one response if the user requests multiple traits
-- The app will automatically update after you adjust sliders"""
+- Explain what each trait means and which variant (_x or _y) you're using
+- The app will automatically update after you adjust sliders or compute a selection index
+- When computing an index, briefly explain that lines are ranked by a composite z-score weighted by priorities"""
 
             if context:
                 system_prompt += f"\n\nCurrent context:\n{context}"
