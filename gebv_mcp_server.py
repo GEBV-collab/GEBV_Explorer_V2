@@ -170,6 +170,60 @@ def get_current_filters() -> str:
         return f"Error: {str(e)}"
 
 
+@mcp.tool()
+def compute_selection_index(trait_weights: dict, top_n: int = 20) -> str:
+    """
+    Compute a weighted linear selection index across multiple GEBV traits.
+
+    Lines are scored as I = sum(w_j * z_ij), where z_ij is the z-score
+    normalized GEBV for line i on trait j. Weights are automatically
+    normalized to sum to 1, so only relative values matter.
+
+    Args:
+        trait_weights: Dict mapping trait names to relative economic weights.
+                       Example: {"GEBV_yield": 0.6, "GEBV_Brix": 0.3, "GEBV_pungency": 0.1}
+        top_n: Number of top-ranked lines to return (default 20)
+
+    Returns:
+        Ranked list of lines with their composite index scores
+    """
+    log(f"compute_selection_index called: weights={trait_weights}, top_n={top_n}")
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/selection_index",
+            json={"trait_weights": trait_weights, "top_n": top_n},
+            timeout=10
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            results = data.get("results", [])
+            norm_w = data.get("normalized_weights", {})
+
+            weight_summary = ", ".join(f"{t}={w:.3f}" for t, w in norm_w.items())
+            lines = [
+                f"  {r['rank']}. {r['Line']}  score={r['index_score']:.4f}"
+                for r in results
+            ]
+            log(f"compute_selection_index OK: {len(results)} results")
+            return (
+                f"Weighted Selection Index (normalized weights: {weight_summary})\n"
+                + "\n".join(lines)
+            )
+        else:
+            error_msg = response.json().get("error", "Unknown error")
+            log(f"compute_selection_index API error: {error_msg}")
+            return f"Error: {error_msg}"
+
+    except requests.exceptions.ConnectionError:
+        return f"Error: Could not connect to GEBV API server at {API_BASE_URL}"
+    except requests.exceptions.Timeout:
+        return "Error: Request timed out"
+    except Exception as e:
+        log(f"compute_selection_index exception: {e}")
+        return f"Error: {str(e)}"
+
+
 if __name__ == "__main__":
     try:
         mcp.run()

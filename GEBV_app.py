@@ -225,3 +225,83 @@ sns.heatmap(
 )
 
 st.pyplot(fig)
+
+# ─── Weighted Selection Index ──────────────────────────
+import requests as _req
+
+st.write("---")
+st.subheader("Weighted Selection Index")
+st.caption(
+    "Rank lines by a composite score I = Σ(wⱼ × zᵢⱼ), where zᵢⱼ is the "
+    "z-score of trait j for line i. Assign weights to traits you care about "
+    "(leave at 0 to exclude). Weights are normalized automatically."
+)
+
+with st.expander("Configure weights and compute index", expanded=True):
+    st.markdown("**Set trait weights** (0 = exclude):")
+
+    n_cols = 4
+    weight_inputs = {}
+    trait_chunks = [trait_cols[i:i+n_cols] for i in range(0, len(trait_cols), n_cols)]
+    for chunk in trait_chunks:
+        cols = st.columns(len(chunk))
+        for c, trait in zip(cols, chunk):
+            weight_inputs[trait] = c.number_input(
+                label=trait.replace("GEBV_", ""),
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=0.1,
+                key=f"wt_{trait}"
+            )
+
+    top_n_index = st.number_input(
+        "Top N lines to show", min_value=1, max_value=500, value=20, step=1, key="wt_top_n"
+    )
+    compute_btn = st.button("Compute Index")
+
+if compute_btn:
+    active_weights = {t: w for t, w in weight_inputs.items() if w != 0.0}
+    if not active_weights:
+        st.warning("Assign a non-zero weight to at least one trait.")
+    else:
+        try:
+            resp = _req.post(
+                "http://127.0.0.1:5001/selection_index",
+                json={"trait_weights": active_weights, "top_n": int(top_n_index)},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                idx_data = resp.json()
+                idx_df = pd.DataFrame(idx_data["results"])
+                nw = idx_data.get("normalized_weights", {})
+
+                st.success(f"Index computed over {len(active_weights)} trait(s).")
+                nw_str = ", ".join(f"{t.replace('GEBV_', '')}={v:.3f}" for t, v in nw.items())
+                st.caption(f"Normalized weights: {nw_str}")
+
+                st.dataframe(idx_df, use_container_width=True)
+
+                bar = (
+                    alt.Chart(idx_df)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("index_score:Q", title="Index Score"),
+                        y=alt.Y("Line:N", sort="-x", title="Line"),
+                        tooltip=["rank", "Line"] + list(active_weights.keys()) + ["index_score"],
+                    )
+                    .properties(title=f"Top {int(top_n_index)} Lines — Weighted Selection Index")
+                )
+                st.altair_chart(bar, use_container_width=True)
+
+                st.download_button(
+                    "Download index results CSV",
+                    idx_df.to_csv(index=False).encode("utf-8"),
+                    file_name="weighted_index_results.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.error(f"API error: {resp.json().get('error', 'Unknown error')}")
+        except Exception as e:
+            st.error(f"Could not reach API server: {e}")
+            st.info("Make sure gebv_api_server.py is running on port 5001.")
