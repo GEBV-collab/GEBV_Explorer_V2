@@ -125,12 +125,29 @@ async def run_mcp_chat(user_message: str, context: str = "", api_key: str = None
 {TRAIT_METADATA}
 
 ## Tools Available:
+
+### Slider tools (hard AND filters — lines must pass every threshold):
 1. **adjust_slider** - Adjust a trait slider by percentile range (0-100)
 2. **get_available_traits** - List all available GEBV trait names
 3. **reset_all_sliders** - Reset ALL sliders to full range (removes all filters)
 4. **get_current_filters** - See which filters are currently active
 
-## How Percentiles Work:
+### Selection index tool (soft ranking — all lines scored and ranked):
+5. **compute_selection_index** - Rank lines using a weighted linear selection index.
+   Takes trait_weights (dict of trait name to weight, e.g. {{"GEBV_yield": 2.0, "GEBV_Brix": 1.0}})
+   and optional top_n (default 20). Weights are normalized automatically.
+   Each trait is z-score standardised so they are on the same scale, then
+   the weighted sum gives a composite score. The page will update automatically
+   to show the ranked results.
+
+## When to use sliders vs the selection index:
+- Use **sliders** when the user wants to filter/exclude lines (e.g. "show me lines in the top 10% for yield")
+- Use **compute_selection_index** when the user wants to rank or optimise across multiple traits
+  with different priorities (e.g. "rank lines prioritising yield twice as much as Brix",
+  "which lines are best for both quality and yield?", "find the best compromise lines")
+- You can use BOTH in the same response: first compute an index to rank, then set sliders to filter
+
+## How Percentiles Work (for sliders):
 - "top 10%" = start_percent=90, end_percent=100 (highest values)
 - "bottom 20%" = start_percent=0, end_percent=20 (lowest values)
 - "middle 50%" = start_percent=25, end_percent=75
@@ -145,7 +162,9 @@ async def run_mcp_chat(user_message: str, context: str = "", api_key: str = None
 - For example: "spicy" or "heat" refers to GEBV_Fruit_pungency, "sugar content" refers to GEBV_Brix
 - Explain what each trait means when adjusting sliders
 - You can adjust multiple sliders in one response if the user requests filtering by multiple traits
-- The app will automatically update after you adjust sliders"""
+- The app will automatically update after you adjust sliders or compute a selection index
+- When computing an index, briefly explain that lines are ranked by a composite z-score
+  weighted by the user's priorities, and mention what each weight means"""
 
             if context:
                 system_prompt += f"\n\nCurrent context:\n{context}"

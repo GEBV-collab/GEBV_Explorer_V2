@@ -19,6 +19,7 @@ slider_state = {}
 # In-memory store for last weighted index result
 _last_index_result = {}
 state_file = "slider_state.json"
+WEIGHTED_INDEX_STATE_FILE = "weighted_index_result.json"
 
 def load_state():
     """Load slider state from file if it exists"""
@@ -273,6 +274,11 @@ def compute_selection_index():
         "computed_at": datetime.now().isoformat(),
     }
     _last_index_result = payload
+
+    # Persist to file so Streamlit can pick it up on rerun
+    with open(WEIGHTED_INDEX_STATE_FILE, 'w') as f:
+        json.dump(payload, f, indent=2)
+
     return jsonify(payload)
 
 
