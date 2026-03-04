@@ -225,3 +225,102 @@ sns.heatmap(
 )
 
 st.pyplot(fig)
+
+# ─── Smith-Hazel Selection Index ──────────────────────
+import requests as _req
+
+st.write("---")
+st.subheader("Smith-Hazel Selection Index")
+st.caption(
+    "The Smith-Hazel index accounts for genetic and phenotypic correlations between traits "
+    "when ranking lines. Supply economic weights (how much you value each trait) and the "
+    "index derives adjusted coefficients via b = P⁻¹Gw. Requires at least 2 traits."
+)
+
+with st.expander("Configure weights and compute index", expanded=True):
+    st.markdown("**Set economic weights** (leave at 0 to exclude a trait):")
+
+    n_cols = 4
+    sh_weights = {}
+    trait_chunks = [trait_cols[i:i+n_cols] for i in range(0, len(trait_cols), n_cols)]
+    for chunk in trait_chunks:
+        cols = st.columns(len(chunk))
+        for c, trait in zip(cols, chunk):
+            sh_weights[trait] = c.number_input(
+                label=trait.replace("GEBV_", ""),
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=0.1,
+                key=f"sh_{trait}"
+            )
+
+    sh_top_n = st.number_input("Top N lines to show", min_value=1, max_value=500, value=20, step=1, key="sh_top_n")
+    sh_btn = st.button("Compute Smith-Hazel Index")
+
+if sh_btn:
+    active_sh = {t: w for t, w in sh_weights.items() if w != 0.0}
+    if len(active_sh) < 2:
+        st.warning("Smith-Hazel requires at least 2 traits with non-zero weights.")
+    else:
+        # Show correlation heatmap for selected traits
+        st.markdown("**Trait correlations for selected traits** (this is why S-H differs from simple weighting):")
+        selected_corr = df[list(active_sh.keys())].corr()
+        fig_sh, ax_sh = plt.subplots(figsize=(max(4, len(active_sh)), max(3, len(active_sh) - 1)))
+        sns.heatmap(
+            selected_corr, annot=True, fmt=".2f", cmap="coolwarm",
+            center=0, ax=ax_sh, cbar_kws={"label": "Pearson r"}
+        )
+        st.pyplot(fig_sh)
+
+        try:
+            resp = _req.post(
+                "http://127.0.0.1:5001/smith_hazel_index",
+                json={"trait_weights": active_sh, "top_n": int(sh_top_n)},
+                timeout=15
+            )
+            if resp.status_code == 200:
+                sh_data = resp.json()
+                sh_df = pd.DataFrame(sh_data["ranked_lines"])
+                sh_coeffs = sh_data.get("index_coefficients", {})
+                econ_w = sh_data.get("economic_weights", {})
+
+                st.success(f"Index computed. {sh_data.get('n_lines_total', '?')} lines evaluated.")
+                st.caption(sh_data.get("note", ""))
+
+                # Side-by-side: economic weights vs derived index coefficients
+                st.markdown("**Economic weights → derived index coefficients** (effect of trait correlations):")
+                coeff_df = pd.DataFrame({
+                    "Trait": list(econ_w.keys()),
+                    "Economic Weight": [econ_w[t] for t in econ_w],
+                    "Index Coefficient (b)": [sh_coeffs.get(t, 0) for t in econ_w],
+                })
+                st.dataframe(coeff_df, use_container_width=True)
+
+                # Ranked table
+                st.dataframe(sh_df, use_container_width=True)
+
+                # Bar chart
+                bar_sh = (
+                    alt.Chart(sh_df)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("SmithHazel_Index:Q", title="Smith-Hazel Index Score"),
+                        y=alt.Y("Line:N", sort="-x", title="Line"),
+                        tooltip=["Line"] + list(active_sh.keys()) + ["SmithHazel_Index"]
+                    )
+                    .properties(title=f"Top {int(sh_top_n)} Lines — Smith-Hazel Index")
+                )
+                st.altair_chart(bar_sh, use_container_width=True)
+
+                st.download_button(
+                    "Download Smith-Hazel results CSV",
+                    sh_df.to_csv(index=False).encode("utf-8"),
+                    file_name="smith_hazel_results.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.error(f"API error: {resp.json().get('error', 'Unknown error')}")
+        except Exception as e:
+            st.error(f"Could not reach API server: {e}")
+            st.info("Make sure gebv_api_server.py is running on port 5001.")

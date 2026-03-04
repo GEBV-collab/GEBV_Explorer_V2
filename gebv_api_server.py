@@ -8,11 +8,16 @@ from flask import Flask, request, jsonify
 import json
 import os
 from datetime import datetime
+import numpy as np
+import pandas as pd
 
 app = Flask(__name__)
 
 # Simple in-memory storage (in production, use Redis/database)
 slider_state = {}
+
+# In-memory store for last Smith-Hazel result
+smith_hazel_result = None
 state_file = "slider_state.json"
 
 def load_state():
@@ -203,6 +208,113 @@ def trait_info():
         return jsonify({"fallback": True, "matches": results, "error": str(e)})
 
 
+def _load_df():
+    """Load and merge the GEBV dataframes."""
+    BASE = os.path.dirname(__file__)
+    df_q = pd.read_csv(os.path.join(BASE, "data", "GEBVs_quality_23trait_n423.csv"))
+    df_a = pd.read_csv(os.path.join(BASE, "data", "GEBVs_ag_73traitmean_n423.csv"))
+    if "Group" in df_a.columns and "Group" in df_q.columns:
+        return pd.merge(df_q, df_a, on=["Line", "Group"], how="inner")
+    return pd.merge(df_q, df_a, on="Line", how="inner")
+
+
+@app.route('/smith_hazel_index', methods=['POST'])
+def compute_smith_hazel_index():
+    """
+    Compute the Smith-Hazel selection index.
+
+    G matrix is estimated as the sample covariance of the GEBVs themselves
+    (GEBVs are estimates of breeding values, so their covariance approximates
+    the genetic covariance structure).
+
+    P matrix is approximated as P = G + E where E = diag(var_j * 0.5),
+    assuming a mean heritability of ~0.5 so residual variance ≈ genetic variance.
+    This is an acknowledged approximation; ideally P would come from replicated
+    phenotypic trial data.
+    """
+    global smith_hazel_result
+
+    data = request.get_json()
+    if not data or "trait_weights" not in data:
+        return jsonify({"error": "Missing trait_weights"}), 400
+
+    trait_weights = data["trait_weights"]
+    top_n = int(data.get("top_n", 20))
+
+    if len(trait_weights) < 2:
+        return jsonify({"error": "Smith-Hazel index requires at least 2 traits"}), 400
+
+    try:
+        df = _load_df()
+    except Exception as e:
+        return jsonify({"error": f"Could not load data: {str(e)}"}), 500
+
+    # Validate traits
+    missing = [t for t in trait_weights if t not in df.columns]
+    if missing:
+        return jsonify({"error": f"Traits not found: {', '.join(missing)}"}), 400
+
+    traits = list(trait_weights.keys())
+    w = np.array([trait_weights[t] for t in traits], dtype=float)
+
+    X = df[traits].dropna().values  # shape (n_lines, n_traits)
+    line_ids = df.loc[df[traits].dropna().index, "Line"].values
+    group_col = df.loc[df[traits].dropna().index, "Group"].values if "Group" in df.columns else None
+
+    # G matrix: sample covariance of GEBVs (approximates genetic covariance)
+    G = np.cov(X, rowvar=False)
+
+    # E matrix: diagonal residual variance, assuming h² ≈ 0.5
+    # residual variance ≈ genetic variance when h² = 0.5
+    E = np.diag(np.diag(G) * 0.5)
+
+    # P matrix: phenotypic covariance = G + E
+    P = G + E
+
+    # Index coefficients: b = P^{-1} G w
+    try:
+        b = np.linalg.solve(P, G @ w)
+    except np.linalg.LinAlgError:
+        return jsonify({"error": "P matrix is singular — traits may be perfectly correlated"}), 400
+
+    # Index scores: I = X @ b
+    scores = X @ b
+
+    # Build result dataframe
+    result_df = pd.DataFrame({"Line": line_ids, "SmithHazel_Index": scores})
+    for t in traits:
+        result_df[t] = df.loc[df[traits].dropna().index, t].values
+    if group_col is not None:
+        result_df["Group"] = group_col
+
+    result_df = result_df.sort_values("SmithHazel_Index", ascending=False).head(top_n)
+
+    # Index coefficients with trait names
+    index_coefficients = {t: float(b[i]) for i, t in enumerate(traits)}
+
+    smith_hazel_result = {
+        "ranked_lines": result_df.to_dict(orient="records"),
+        "index_coefficients": index_coefficients,
+        "economic_weights": trait_weights,
+        "n_lines_total": len(X),
+        "computed_at": datetime.now().isoformat(),
+        "note": (
+            "G estimated from GEBV sample covariance. "
+            "P = G + E where E = 0.5*diag(G), assuming mean h²≈0.5."
+        )
+    }
+
+    return jsonify(smith_hazel_result)
+
+
+@app.route('/smith_hazel_index/result', methods=['GET'])
+def get_smith_hazel_result():
+    """Return the last computed Smith-Hazel index result."""
+    if smith_hazel_result is None:
+        return jsonify({"error": "No result yet — run a computation first"}), 404
+    return jsonify(smith_hazel_result)
+
+
 if __name__ == '__main__':
     load_state()
     print("GEBV API Server starting...")
@@ -214,5 +326,7 @@ if __name__ == '__main__':
     print("  POST /sliders/<trait> - Set slider (JSON: {start_percent, end_percent})")
     print("  POST /sliders/reset - Reset all sliders")
     print("  DEL  /sliders/<trait> - Reset specific slider")
+    print("  POST /smith_hazel_index - Compute Smith-Hazel selection index")
+    print("  GET  /smith_hazel_index/result - Get last Smith-Hazel result")
 
     app.run(host='0.0.0.0', port=5001, debug=False)

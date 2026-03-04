@@ -170,6 +170,80 @@ def get_current_filters() -> str:
         return f"Error: {str(e)}"
 
 
+@mcp.tool()
+def compute_smith_hazel_index(trait_weights: dict, top_n: int = 20) -> str:
+    """
+    Compute the Smith-Hazel selection index across multiple GEBV traits.
+
+    Uses the Smith-Hazel index (b = P^-1 * G * w) which accounts for genetic
+    and phenotypic correlations between traits when deriving index coefficients.
+    This means the final weights applied to each trait are adjusted based on
+    how correlated the traits are, unlike a simple weighted average.
+
+    Requires at least 2 traits. G is estimated from the GEBV sample covariance;
+    P is approximated as G + E assuming mean heritability of ~0.5.
+
+    Args:
+        trait_weights: Dict mapping trait names to economic weights.
+                       Weights do not need to sum to any particular value.
+                       Example: {"GEBV_yield": 2.0, "GEBV_Brix": 1.0, "GEBV_pungency": 0.5}
+        top_n: Number of top-ranked lines to return (default 20)
+
+    Returns:
+        Ranked lines with index scores, plus derived index coefficients showing
+        how correlations modified the user-supplied economic weights.
+    """
+    log(f"compute_smith_hazel_index called: traits={list(trait_weights.keys())}, top_n={top_n}")
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/smith_hazel_index",
+            json={"trait_weights": trait_weights, "top_n": top_n},
+            timeout=15
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            lines = data.get("ranked_lines", [])
+            coeffs = data.get("index_coefficients", {})
+            econ_w = data.get("economic_weights", {})
+
+            # Format coefficient comparison
+            coeff_lines = []
+            for t in econ_w:
+                coeff_lines.append(
+                    f"  {t}: economic weight={econ_w[t]:.3f}  ->  index coefficient={coeffs.get(t, 0):.4f}"
+                )
+
+            # Format ranked lines
+            ranked = []
+            for i, row in enumerate(lines, 1):
+                score = row.get("SmithHazel_Index", 0)
+                ranked.append(f"  {i}. {row.get('Line', '?')} (score={score:.4f})")
+
+            result = (
+                f"Smith-Hazel Index -- top {len(lines)} of {data.get('n_lines_total', '?')} lines\n\n"
+                f"Index coefficients (economic weights adjusted for trait correlations):\n"
+                + "\n".join(coeff_lines)
+                + f"\n\nRanked lines:\n"
+                + "\n".join(ranked)
+                + f"\n\nNote: {data.get('note', '')}"
+            )
+            log("compute_smith_hazel_index OK")
+            return result
+        else:
+            error_msg = response.json().get("error", "Unknown error")
+            log(f"compute_smith_hazel_index API error: {error_msg}")
+            return f"Error: {error_msg}"
+
+    except requests.exceptions.ConnectionError:
+        return f"Error: Could not connect to GEBV API server at {API_BASE_URL}"
+    except requests.exceptions.Timeout:
+        return "Error: Request timed out"
+    except Exception as e:
+        log(f"compute_smith_hazel_index exception: {e}")
+        return f"Error: {str(e)}"
+
+
 if __name__ == "__main__":
     try:
         mcp.run()
