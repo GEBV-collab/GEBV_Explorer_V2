@@ -97,58 +97,6 @@ for col, (lo, hi) in thresholds.items():
     mask &= df[col].between(lo, hi)
 filtered = df[mask]
 
-# ─── 5) Display filtered table ───────────────────────
-st.write(f"Lines passing all thresholds: **{len(filtered)}**")
-st.dataframe(filtered)
-
-# ─── 6) All-lines expander ───────────────────────────
-with st.expander("Show all lines (unfiltered)"):
-    st.dataframe(df)
-
-# ─── 7) Scatter plot layering ────────────────────────
-st.write("---")
-st.subheader("Scatter plot of two traits")
-
-default_x = trait_cols.index("GEBV_fruitno_x") if "GEBV_fruitno_x" in trait_cols else 0
-default_y = trait_cols.index("GEBV_yield_y") if "GEBV_yield_y" in trait_cols else 1
-
-col1, col2 = st.columns(2)
-with col1:
-    x_sel = st.selectbox("X-axis trait", trait_cols, index=default_x)
-with col2:
-    y_sel = st.selectbox("Y-axis trait", trait_cols, index=default_y)
-
-if x_sel and y_sel:
-    base = (
-        alt.Chart(df)
-        .mark_circle(size=60, color="lightgray")
-        .encode(
-            x=alt.X(x_sel, type="quantitative"),
-            y=alt.Y(y_sel, type="quantitative"),
-            tooltip=["Line", x_sel, y_sel]
-        )
-    )
-    highlight = (
-        alt.Chart(filtered)
-        .mark_circle(size=60, color="red")
-        .encode(
-            x=alt.X(x_sel, type="quantitative"),
-            y=alt.Y(y_sel, type="quantitative"),
-            tooltip=["Line", x_sel, y_sel]
-        )
-    )
-    st.altair_chart(alt.layer(base, highlight).interactive(),
-                    use_container_width=True)
-
-# ─── 8) Download filtered CSV ─────────────────────────
-st.write("---")
-st.download_button(
-    "Download filtered CSV",
-    filtered.to_csv(index=False).encode("utf-8"),
-    file_name="filtered_global_lines.csv",
-    mime="text/csv",
-)
-
 # ─── 9) Chat with Data Filtering ─────────────────────────
 st.write("---")
 st.subheader("Chat with Data Filtering")
@@ -197,6 +145,57 @@ if run_chat and user_q:
     except Exception as e:
         st.error(f"Chat failed: {e}")
 
+# ─── 7) Scatter plot layering ────────────────────────
+st.write("---")
+st.subheader("Scatter plot of two traits")
+
+default_x = trait_cols.index("GEBV_fruitno_x") if "GEBV_fruitno_x" in trait_cols else 0
+default_y = trait_cols.index("GEBV_yield_y") if "GEBV_yield_y" in trait_cols else 1
+
+col1, col2 = st.columns(2)
+with col1:
+    x_sel = st.selectbox("X-axis trait", trait_cols, index=default_x)
+with col2:
+    y_sel = st.selectbox("Y-axis trait", trait_cols, index=default_y)
+
+if x_sel and y_sel:
+    base = (
+        alt.Chart(df)
+        .mark_circle(size=60, color="lightgray")
+        .encode(
+            x=alt.X(x_sel, type="quantitative"),
+            y=alt.Y(y_sel, type="quantitative"),
+            tooltip=["Line", x_sel, y_sel]
+        )
+    )
+    highlight = (
+        alt.Chart(filtered)
+        .mark_circle(size=60, color="red")
+        .encode(
+            x=alt.X(x_sel, type="quantitative"),
+            y=alt.Y(y_sel, type="quantitative"),
+            tooltip=["Line", x_sel, y_sel]
+        )
+    )
+    st.altair_chart(alt.layer(base, highlight).interactive(),
+                    use_container_width=True)
+# ─── 5) Display filtered table ───────────────────────
+st.write(f"Lines passing all thresholds: **{len(filtered)}**")
+st.dataframe(filtered)
+
+# ─── 6) All-lines expander ───────────────────────────
+with st.expander("Show all lines (unfiltered)"):
+    st.dataframe(df)
+
+# ─── 8) Download filtered CSV ─────────────────────────
+st.write("---")
+st.download_button(
+    "Download filtered CSV",
+    filtered.to_csv(index=False).encode("utf-8"),
+    file_name="filtered_global_lines.csv",
+    mime="text/csv",
+)
+
 # Display the last chat result (persists across reruns)
 if st.session_state.global_chat_result:
     result = st.session_state.global_chat_result
@@ -207,69 +206,84 @@ if st.session_state.global_chat_result:
             for tc in result['tool_calls']:
                 st.code(f"Tool: {tc['tool']}\nInput: {tc['input']}\nResult: {tc['result']}", language="yaml")
 
-# ─── 10) Trait–Trait Correlation Heatmap ──────────────
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-st.write("---")
-st.subheader("Trait–Trait Correlation Heatmap")
-
-corr = df[trait_cols].corr()
-
-fig, ax = plt.subplots(figsize=(10, 8))
-sns.heatmap(
-    corr,
-    annot=True,
-    fmt=".2f",
-    cmap="coolwarm",
-    center=0,
-    ax=ax,
-    cbar_kws={'label': 'Pearson Correlation'},
-    annot_kws={"size": 5}
-)
-
-st.pyplot(fig)
-
 # ─── Weighted Selection Index ──────────────────────────
 import requests as _req
 
 st.write("---")
 st.subheader("Weighted Selection Index")
 st.caption(
-    "Rank lines by a composite score I = \u03a3(w\u2c7c \u00d7 z\u1d62\u2c7c), where z\u1d62\u2c7c is the "
-    "z-score of trait j for line i. Assign weights to traits you care about "
-    "(leave at 0 to exclude). Weights are normalized automatically. "
-    "You can also ask the chat to compute this for you."
+    "Rank lines by a composite score I = Σ(wⱼ × zᵢⱼ), where zᵢⱼ is the "
+    "z-score of trait j for line i. First select the traits you want to include, "
+    "then assign weights. Weights are normalized automatically."
 )
 
-with st.expander("Configure weights and compute index", expanded=False):
-    st.markdown("**Set trait weights** (0 = exclude):")
+with st.expander("Configure weights and compute index", expanded=True):
+    st.markdown("**1. Select traits to include**")
 
-    n_cols = 4
+    default_traits = [
+        t for t in ["GEBV_yield", "GEBV_DATmaturity", "GEBV_Fruit_pungency"]
+        if t in trait_cols
+    ]
+
+    if "wt_global_selected_traits_v2" not in st.session_state or not st.session_state["wt_global_selected_traits_v2"]:
+        st.session_state["wt_global_selected_traits_v2"] = default_traits
+
+    selected_traits = st.multiselect(
+        "Traits for weighted index",
+        options=trait_cols,
+        format_func=lambda x: x.replace("GEBV_", ""),
+        key="wt_global_selected_traits_v2"
+    )
+
     weight_inputs = {}
-    trait_chunks = [trait_cols[i:i+n_cols] for i in range(0, len(trait_cols), n_cols)]
-    for chunk in trait_chunks:
-        cols = st.columns(len(chunk))
-        for c, trait in zip(cols, chunk):
-            weight_inputs[trait] = c.number_input(
-                label=trait.replace("GEBV_", ""),
-                min_value=0.0,
-                max_value=100.0,
-                value=0.0,
-                step=0.1,
-                key=f"wt_global_{trait}"
-            )
+
+    if selected_traits:
+        st.markdown("**2. Assign weights**")
+
+        n_cols = 3
+        trait_chunks = [selected_traits[i:i + n_cols] for i in range(0, len(selected_traits), n_cols)]
+
+        for chunk in trait_chunks:
+            cols = st.columns(len(chunk))
+            for c, trait in zip(cols, chunk):
+                default_weight = 1.0
+                if trait == "GEBV_yield":
+                    default_weight = 0.7
+                elif trait == "GEBV_DATmaturity":
+                    default_weight = 0.1
+                elif trait == "GEBV_Fruit_pungency":
+                    default_weight = 0.2
+
+                weight_inputs[trait] = c.number_input(
+                    label=trait.replace("GEBV_", ""),
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(default_weight),
+                    step=0.1,
+                    key=f"wt_global_{trait}"
+                )
+    else:
+        st.info("Select one or more traits to begin.")
 
     top_n_index = st.number_input(
-        "Top N lines to show", min_value=1, max_value=500, value=20, step=1, key="wt_global_top_n"
+        "Top N lines to show",
+        min_value=1,
+        max_value=500,
+        value=20,
+        step=1,
+        key="wt_global_top_n"
     )
-    compute_btn = st.button("Compute Index")
+
+    compute_btn = st.button("Compute Index", key="wt_global_compute_btn")
 
 idx_data = None
 if compute_btn:
     active_weights = {t: w for t, w in weight_inputs.items() if w != 0.0}
-    if not active_weights:
-        st.warning("Assign a non-zero weight to at least one trait.")
+
+    if not selected_traits:
+        st.warning("Select at least one trait.")
+    elif not active_weights:
+        st.warning("Assign a non-zero weight to at least one selected trait.")
     else:
         try:
             resp = _req.post(
@@ -288,7 +302,7 @@ if compute_btn:
 if idx_data is None:
     try:
         if os.path.exists(WEIGHTED_INDEX_STATE_FILE):
-            with open(WEIGHTED_INDEX_STATE_FILE, 'r') as f:
+            with open(WEIGHTED_INDEX_STATE_FILE, "r") as f:
                 idx_data = json.load(f)
     except Exception:
         pass
@@ -309,7 +323,6 @@ if idx_data and "results" in idx_data:
     )
 
     st.caption(f"Computed at: {idx_data.get('computed_at', 'unknown')}")
-
     st.markdown(f"**Top {len(idx_df)} lines** (sorted by index score, highest first):")
     st.dataframe(idx_df, use_container_width=True)
 
@@ -321,7 +334,7 @@ if idx_data and "results" in idx_data:
             y=alt.Y("Line:N", sort="-x", title="Line"),
             tooltip=["rank", "Line"] + active_traits + ["index_score"],
         )
-        .properties(title=f"Top {len(idx_df)} Lines \u2014 Weighted Selection Index (highest = best)")
+        .properties(title=f"Top {len(idx_df)} Lines — Weighted Selection Index (highest = best)")
     )
     st.altair_chart(bar, use_container_width=True)
 
