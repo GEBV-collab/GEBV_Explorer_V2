@@ -172,9 +172,21 @@ def get_current_filters() -> str:
 @mcp.tool()
 def compute_smith_hazel_index(trait_weights: dict, top_n: int = 20) -> str:
     """
-    Compute the Smith-Hazel selection index across multiple GEBV traits.
+    Compute an accuracy-adjusted genomic selection index across multiple GEBV traits.
 
-    Uses b = P^-1 * G * w to account for genetic and phenotypic correlations.
+    Uses the genomic selection index:
+
+        b = (R G R)^-1 (R G a)
+
+    where:
+    - G is the covariance matrix among selected GEBV traits
+    - R is a diagonal matrix of trait prediction accuracies
+    - a is the vector of user-supplied economic weights
+
+    This means the final weights applied to each trait are adjusted based on:
+    • genetic covariance between traits
+    • unequal prediction accuracies of traits
+
     Requires at least 2 traits.
 
     Args:
@@ -183,7 +195,7 @@ def compute_smith_hazel_index(trait_weights: dict, top_n: int = 20) -> str:
         top_n: Number of top-ranked lines to return (default 20)
 
     Returns:
-        Ranked lines with index scores and derived index coefficients.
+        Ranked lines with genomic selection index scores and derived coefficients.
     """
     log(f"compute_smith_hazel_index called: traits={list(trait_weights.keys())}, top_n={top_n}")
     try:
@@ -198,11 +210,15 @@ def compute_smith_hazel_index(trait_weights: dict, top_n: int = 20) -> str:
             lines = data.get("ranked_lines", [])
             coeffs = data.get("index_coefficients", {})
             econ_w = data.get("economic_weights", {})
+            trait_acc = data.get("trait_accuracies", {})
 
             coeff_lines = []
             for t in econ_w:
+                acc_str = ""
+                if t in trait_acc:
+                    acc_str = f"  |  prediction accuracy={trait_acc[t]:.3f}"
                 coeff_lines.append(
-                    f"  {t}: economic weight={econ_w[t]:.3f}  ->  index coefficient={coeffs.get(t, 0):.4f}"
+                    f"  {t}: economic weight={econ_w[t]:.3f}  ->  index coefficient={coeffs.get(t, 0):.4f}{acc_str}"
                 )
 
             ranked = []
@@ -211,8 +227,10 @@ def compute_smith_hazel_index(trait_weights: dict, top_n: int = 20) -> str:
                 ranked.append(f"  {i}. {row.get('Line', '?')} (score={score:.4f})")
 
             result = (
-                f"Smith-Hazel Index -- top {len(lines)} of {data.get('n_lines_total', '?')} lines\n\n"
-                f"Index coefficients (economic weights adjusted for trait correlations):\n"
+                f"Genomic Selection Index -- top {len(lines)} lines\n"
+                f"(scores computed for {data.get('n_lines_scored', '?')} lines; "
+                f"G covariance estimated from {data.get('n_lines_covariance', '?')} lines)\n\n"
+                f"Index coefficients (economic weights adjusted for covariance and prediction accuracy):\n"
                 + "\n".join(coeff_lines)
                 + f"\n\nRanked lines:\n"
                 + "\n".join(ranked)

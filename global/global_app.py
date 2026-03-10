@@ -46,7 +46,6 @@ def get_slider_value_from_api(trait_col, df):
         max_val = float(df[trait_col].quantile(state["end_percent"] / 100))
         return (min_val, max_val), True
 
-    # Return full range if no API override
     lo, hi = float(df[trait_col].min()), float(df[trait_col].max())
     return (lo, hi), False
 
@@ -72,14 +71,8 @@ thresholds = {}
 
 for col in trait_cols:
     lo, hi = float(df[col].min()), float(df[col].max())
-
-    # Check if API has set a value for this slider
     (api_min, api_max), has_api_value = get_slider_value_from_api(col, df)
-
-    # Use API value if available, otherwise use full range
     default_value = (api_min, api_max) if has_api_value else (lo, hi)
-
-    # Add indicator for AI-controlled sliders
     label = f"🤖 {col}" if has_api_value else col
 
     thresholds[col] = st.sidebar.slider(
@@ -96,6 +89,58 @@ mask = pd.Series(True, index=df.index)
 for col, (lo, hi) in thresholds.items():
     mask &= df[col].between(lo, hi)
 filtered = df[mask]
+
+# ─── 9) Chat with Data Filtering ─────────────────────────
+st.write("---")
+st.subheader("Chat with Data Filtering")
+st.caption("Use natural language to adjust trait sliders. Examples: 'Show me the top 10% for yield', 'Filter for high fruit number'")
+
+if 'global_chat_result' not in st.session_state:
+    st.session_state.global_chat_result = None
+if 'global_should_rerun' not in st.session_state:
+    st.session_state.global_should_rerun = False
+
+if st.session_state.global_should_rerun:
+    st.session_state.global_should_rerun = False
+    st.rerun()
+
+qcol1, qcol2 = st.columns([3, 1])
+with qcol1:
+    user_q = st.text_input("Your message", key="global_mcp_q", placeholder="e.g., Set yield to top 20% and show available traits")
+with qcol2:
+    run_chat = st.button("Send")
+
+if run_chat and user_q:
+    try:
+        import sys
+        sys.path.insert(0, BASE)
+        from global_mcp_chat import chat_with_mcp
+
+        context = f"Available traits: {', '.join(trait_cols)}"
+
+        with st.spinner("Processing..."):
+            result = chat_with_mcp(user_q, context, api_key=_effective_api_key or None)
+
+        st.session_state.global_chat_result = result
+
+        interactive_tools = ('adjust_slider', 'reset_all_sliders', 'compute_smith_hazel_index')
+        tool_used = any(tc['tool'] in interactive_tools for tc in result.get('tool_calls', []))
+
+        if tool_used:
+            st.session_state.global_should_rerun = True
+            st.rerun()
+
+    except Exception as e:
+        st.error(f"Chat failed: {e}")
+
+if st.session_state.global_chat_result:
+    result = st.session_state.global_chat_result
+    st.markdown(f"**Response:** {result['response']}")
+
+    if result['tool_calls']:
+        with st.expander("Tool calls executed"):
+            for tc in result['tool_calls']:
+                st.code(f"Tool: {tc['tool']}\nInput: {tc['input']}\nResult: {tc['result']}", language="yaml")
 
 # ─── 5) Display filtered table ───────────────────────
 st.write(f"Lines passing all thresholds: **{len(filtered)}**")
@@ -137,8 +182,7 @@ if x_sel and y_sel:
             tooltip=["Line", x_sel, y_sel]
         )
     )
-    st.altair_chart(alt.layer(base, highlight).interactive(),
-                    use_container_width=True)
+    st.altair_chart(alt.layer(base, highlight).interactive(), use_container_width=True)
 
 # ─── 8) Download filtered CSV ─────────────────────────
 st.write("---")
@@ -149,124 +193,87 @@ st.download_button(
     mime="text/csv",
 )
 
-# ─── 9) Chat with Data Filtering ─────────────────────────
-st.write("---")
-st.subheader("Chat with Data Filtering")
-st.caption("Use natural language to adjust trait sliders. Examples: 'Show me the top 10% for yield', 'Filter for high fruit number'")
-
-# Initialize session state for chat history
-if 'global_chat_result' not in st.session_state:
-    st.session_state.global_chat_result = None
-if 'global_should_rerun' not in st.session_state:
-    st.session_state.global_should_rerun = False
-
-# Check if we need to rerun (after sliders were adjusted)
-if st.session_state.global_should_rerun:
-    st.session_state.global_should_rerun = False
-    st.rerun()
-
-qcol1, qcol2 = st.columns([3, 1])
-with qcol1:
-    user_q = st.text_input("Your message", key="global_mcp_q", placeholder="e.g., Set yield to top 20% and show available traits")
-with qcol2:
-    run_chat = st.button("Send")
-
-if run_chat and user_q:
-    try:
-        import sys
-        sys.path.insert(0, BASE)
-        from global_mcp_chat import chat_with_mcp
-
-        # Build context about current state
-        context = f"Available traits: {', '.join(trait_cols)}"
-
-        with st.spinner("Processing..."):
-            result = chat_with_mcp(user_q, context, api_key=_effective_api_key or None)
-
-        # Store result in session state
-        st.session_state.global_chat_result = result
-
-        # Check if any interactive tool was used
-        interactive_tools = ('adjust_slider', 'reset_all_sliders', 'compute_smith_hazel_index')
-        tool_used = any(tc['tool'] in interactive_tools for tc in result.get('tool_calls', []))
-
-        if tool_used:
-            st.session_state.global_should_rerun = True
-            st.rerun()
-
-    except Exception as e:
-        st.error(f"Chat failed: {e}")
-
-# Display the last chat result (persists across reruns)
-if st.session_state.global_chat_result:
-    result = st.session_state.global_chat_result
-    st.markdown(f"**Response:** {result['response']}")
-
-    if result['tool_calls']:
-        with st.expander("Tool calls executed"):
-            for tc in result['tool_calls']:
-                st.code(f"Tool: {tc['tool']}\nInput: {tc['input']}\nResult: {tc['result']}", language="yaml")
-
-# ─── 10) Trait–Trait Correlation Heatmap ──────────────
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-st.write("---")
-st.subheader("Trait–Trait Correlation Heatmap")
-
-corr = df[trait_cols].corr()
-
-fig, ax = plt.subplots(figsize=(10, 8))
-sns.heatmap(
-    corr,
-    annot=True,
-    fmt=".2f",
-    cmap="coolwarm",
-    center=0,
-    ax=ax,
-    cbar_kws={'label': 'Pearson Correlation'},
-    annot_kws={"size": 5}
-)
-
-st.pyplot(fig)
-
-# ─── Smith-Hazel Selection Index ──────────────────────
+# ─── Genomic Selection Index ──────────────────────
 import requests as _req
 
 st.write("---")
-st.subheader("Smith-Hazel Selection Index")
+st.subheader("Genomic Selection Index")
 st.caption(
-    "The Smith-Hazel index accounts for genetic and phenotypic correlations between traits "
-    "when ranking lines. Supply economic weights and the index derives adjusted coefficients "
-    "via b = P\u207b\u00b9Gw. Requires at least 2 traits. You can also ask the chat to compute this."
+    "Rank lines using an accuracy-adjusted genomic selection index. "
+    "First select the traits you want to include, then assign economic weights. "
+    "The index derives adjusted coefficients using b = (RGR)⁻¹RGa, where "
+    "G is the covariance of selected GEBV traits and R is the diagonal matrix "
+    "of trait prediction accuracies."
 )
 
-with st.expander("Configure weights and compute index", expanded=False):
-    st.markdown("**Set economic weights** (leave at 0 to exclude a trait):")
+with st.expander("Configure economic weights and compute index", expanded=True):
+    st.markdown("**1. Select traits to include**")
 
-    n_cols = 4
+    default_sh_traits = [
+        t for t in ["GEBV_yield", "GEBV_DATmaturity", "GEBV_Fruit_pungency"]
+        if t in trait_cols
+    ]
+
+    selected_sh_traits = st.multiselect(
+        "Traits for genomic selection index",
+        options=trait_cols,
+        default=default_sh_traits,
+        format_func=lambda x: x.replace("GEBV_", ""),
+        key="sh_global_selected_traits"
+    )
+
     sh_weights = {}
-    trait_chunks = [trait_cols[i:i+n_cols] for i in range(0, len(trait_cols), n_cols)]
-    for chunk in trait_chunks:
-        cols = st.columns(len(chunk))
-        for c, trait in zip(cols, chunk):
-            sh_weights[trait] = c.number_input(
-                label=trait.replace("GEBV_", ""),
-                min_value=0.0,
-                max_value=100.0,
-                value=0.0,
-                step=0.1,
-                key=f"sh_global_{trait}"
-            )
 
-    sh_top_n = st.number_input("Top N lines to show", min_value=1, max_value=500, value=20, step=1, key="sh_global_top_n")
-    sh_btn = st.button("Compute Smith-Hazel Index")
+    if selected_sh_traits:
+        st.markdown("**2. Assign economic weights**")
+
+        n_cols = 3
+        trait_chunks = [
+            selected_sh_traits[i:i + n_cols]
+            for i in range(0, len(selected_sh_traits), n_cols)
+        ]
+
+        for chunk in trait_chunks:
+            cols = st.columns(len(chunk))
+            for c, trait in zip(cols, chunk):
+                default_weight = 1.0
+                if trait == "GEBV_yield":
+                    default_weight = 0.7
+                elif trait == "GEBV_DATmaturity":
+                    default_weight = 0.1
+                elif trait == "GEBV_Fruit_pungency":
+                    default_weight = 0.2
+
+                sh_weights[trait] = c.number_input(
+                    label=trait.replace("GEBV_", ""),
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(default_weight),
+                    step=0.1,
+                    key=f"sh_global_{trait}"
+                )
+    else:
+        st.info("Select at least two traits to begin.")
+
+    sh_top_n = st.number_input(
+        "Top N lines to show",
+        min_value=1,
+        max_value=500,
+        value=20,
+        step=1,
+        key="sh_global_top_n"
+    )
+
+    sh_btn = st.button("Compute Genomic Selection Index", key="sh_global_compute_btn")
 
 sh_data = None
 if sh_btn:
     active_sh = {t: w for t, w in sh_weights.items() if w != 0.0}
-    if len(active_sh) < 2:
-        st.warning("Smith-Hazel requires at least 2 traits with non-zero weights.")
+
+    if len(selected_sh_traits) < 2:
+        st.warning("Select at least 2 traits for the genomic selection index.")
+    elif len(active_sh) < 2:
+        st.warning("Assign non-zero economic weights to at least 2 selected traits.")
     else:
         try:
             resp = _req.post(
@@ -294,61 +301,69 @@ if sh_data and "ranked_lines" in sh_data:
     sh_df = pd.DataFrame(sh_data["ranked_lines"])
     sh_coeffs = sh_data.get("index_coefficients", {})
     econ_w = sh_data.get("economic_weights", {})
+    trait_acc = sh_data.get("trait_accuracies", {})
     active_traits = list(econ_w.keys())
+
+    econ_w_str = ", ".join(f"{t.replace('GEBV_', '')}={v:.2f}" for t, v in econ_w.items())
+    acc_str = ", ".join(
+        f"{t.replace('GEBV_', '')}={trait_acc[t]:.2f}"
+        for t in active_traits if t in trait_acc
+    )
 
     st.info(
         f"**How these results are ordered:** Lines are ranked from highest to lowest "
-        f"Smith-Hazel index score. This score is a composite of "
-        f"{', '.join(t.replace('GEBV_', '') for t in active_traits)} "
-        f"weighted by your economic priorities, but **adjusted for trait correlations**. "
-        f"The index accounts for how traits co-vary genetically \u2014 if two traits you "
-        f"value are already positively correlated, the index avoids double-counting them. "
+        f"genomic selection index score. You assigned these economic weights: {econ_w_str}. "
+        f"The final ranking adjusts those priorities using both the genetic covariance "
+        f"among traits and their prediction accuracies. "
+        f"Trait prediction accuracies used: {acc_str}. "
         f"Rank 1 = best overall line given your priorities."
     )
 
-    st.caption(f"Computed at: {sh_data.get('computed_at', 'unknown')} | "
-               f"{sh_data.get('n_lines_total', '?')} lines evaluated | "
-               f"{sh_data.get('note', '')}")
+    st.caption(
+        f"Computed at: {sh_data.get('computed_at', 'unknown')} | "
+        f"{sh_data.get('n_lines_scored', '?')} lines scored | "
+        f"{sh_data.get('n_lines_covariance', '?')} lines used for G covariance estimation | "
+        f"{sh_data.get('note', '')}"
+    )
 
-    if len(active_traits) >= 2:
-        st.markdown("**Trait correlations** (explains why index coefficients differ from your weights):")
-        selected_corr = df[active_traits].corr()
-        fig_sh, ax_sh = plt.subplots(figsize=(max(4, len(active_traits)), max(3, len(active_traits) - 1)))
-        sns.heatmap(
-            selected_corr, annot=True, fmt=".2f", cmap="coolwarm",
-            center=0, ax=ax_sh, cbar_kws={"label": "Pearson r"}
-        )
-        st.pyplot(fig_sh)
+    if trait_acc:
+        st.markdown("**Trait prediction accuracies used in the genomic index**")
+        acc_df = pd.DataFrame({
+            "Trait": [t.replace("GEBV_", "") for t in active_traits],
+            "Prediction Accuracy": [trait_acc.get(t, None) for t in active_traits]
+        })
+        st.dataframe(acc_df, use_container_width=True)
 
-    st.markdown("**Your weights vs. derived index coefficients** (how correlations modified your priorities):")
+    st.markdown("**Your economic weights vs. derived genomic index coefficients**")
     coeff_df = pd.DataFrame({
         "Trait": [t.replace("GEBV_", "") for t in econ_w],
-        "Your Economic Weight": [econ_w[t] for t in econ_w],
+        "Economic Weight": [econ_w[t] for t in econ_w],
+        "Prediction Accuracy": [trait_acc.get(t, None) for t in econ_w],
         "Derived Index Coefficient (b)": [sh_coeffs.get(t, 0) for t in econ_w],
     })
     st.dataframe(coeff_df, use_container_width=True)
 
-    st.markdown(f"**Top {len(sh_df)} lines** (sorted by Smith-Hazel index score, highest first):")
+    st.markdown(f"**Top {len(sh_df)} lines** (sorted by genomic selection index score, highest first):")
     st.dataframe(sh_df, use_container_width=True)
 
     bar_sh = (
         alt.Chart(sh_df)
         .mark_bar()
         .encode(
-            x=alt.X("SmithHazel_Index:Q", title="Smith-Hazel Index Score"),
+            x=alt.X("SmithHazel_Index:Q", title="Genomic Selection Index Score"),
             y=alt.Y("Line:N", sort="-x", title="Line"),
             tooltip=["Line"] + active_traits + ["SmithHazel_Index"]
         )
-        .properties(title=f"Top {len(sh_df)} Lines \u2014 Smith-Hazel Index (highest = best)")
+        .properties(title=f"Top {len(sh_df)} Lines — Genomic Selection Index (highest = best)")
     )
     st.altair_chart(bar_sh, use_container_width=True)
 
     col_dl, col_clear = st.columns(2)
     with col_dl:
         st.download_button(
-            "Download Smith-Hazel results CSV",
+            "Download genomic selection index results CSV",
             sh_df.to_csv(index=False).encode("utf-8"),
-            file_name="smith_hazel_global_results.csv",
+            file_name="genomic_selection_index_global_results.csv",
             mime="text/csv",
         )
     with col_clear:
