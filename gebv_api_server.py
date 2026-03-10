@@ -20,6 +20,7 @@ slider_state = {}
 smith_hazel_result = None
 state_file = "slider_state.json"
 SMITH_HAZEL_STATE_FILE = "smith_hazel_result.json"
+ACCURACY_PATH = os.path.join(os.path.dirname(__file__), "data", "n423_PAs_96traits.csv")
 
 def load_state():
     """Load slider state from file if it exists"""
@@ -219,19 +220,31 @@ def _load_df():
     return pd.merge(df_q, df_a, on="Line", how="inner")
 
 
+def _load_accuracy_lookup():
+    """Load trait prediction accuracies and return a dict keyed by trait name without GEBV_ prefix."""
+    acc_df = pd.read_csv(ACCURACY_PATH)
+
+    required_cols = {"trait", "r.mean"}
+    if not required_cols.issubset(acc_df.columns):
+        raise ValueError(
+            f"Accuracy file must contain columns: {', '.join(sorted(required_cols))}"
+        )
+
+    acc_df["trait"] = acc_df["trait"].astype(str).str.strip()
+    return dict(zip(acc_df["trait"], acc_df["r.mean"]))
+
+
 @app.route('/smith_hazel_index', methods=['POST'])
 def compute_smith_hazel_index():
     """
-    Compute the Smith-Hazel selection index.
+    Compute an accuracy-adjusted genomic selection index.
 
-    G matrix is estimated as the sample covariance of the GEBVs themselves
-    (GEBVs are estimates of breeding values, so their covariance approximates
-    the genetic covariance structure).
+    G matrix is estimated as the sample covariance of the selected GEBV traits.
+    R is a diagonal matrix of trait prediction accuracies loaded from the PA table.
 
-    P matrix is approximated as P = G + E where E = diag(var_j * 0.5),
-    assuming a mean heritability of ~0.5 so residual variance ≈ genetic variance.
-    This is an acknowledged approximation; ideally P would come from replicated
-    phenotypic trial data.
+    Index coefficients are calculated as:
+        b = (R G R)^-1 (R G a)
+    where a is the vector of user-supplied economic weights.
     """
     global smith_hazel_result
 
@@ -243,65 +256,97 @@ def compute_smith_hazel_index():
     top_n = int(data.get("top_n", 20))
 
     if len(trait_weights) < 2:
-        return jsonify({"error": "Smith-Hazel index requires at least 2 traits"}), 400
+        return jsonify({"error": "Index requires at least 2 traits"}), 400
 
     try:
         df = _load_df()
     except Exception as e:
         return jsonify({"error": f"Could not load data: {str(e)}"}), 500
 
-    # Validate traits
+    try:
+        accuracy_lookup = _load_accuracy_lookup()
+    except Exception as e:
+        return jsonify({"error": f"Could not load prediction accuracies: {str(e)}"}), 500
+
+    # Validate GEBV traits
     missing = [t for t in trait_weights if t not in df.columns]
     if missing:
         return jsonify({"error": f"Traits not found: {', '.join(missing)}"}), 400
 
     traits = list(trait_weights.keys())
-    w = np.array([trait_weights[t] for t in traits], dtype=float)
+    w = np.array([trait_weights[t] for t in traits], dtype=float).reshape(-1, 1)
 
-    X = df[traits].dropna().values  # shape (n_lines, n_traits)
-    line_ids = df.loc[df[traits].dropna().index, "Line"].values
-    group_col = df.loc[df[traits].dropna().index, "Group"].values if "Group" in df.columns else None
+    # Validate accuracy lookup using trait names without GEBV_ prefix
+    pa_traits = [t.replace("GEBV_", "", 1) for t in traits]
+    missing_acc = [t for t in pa_traits if t not in accuracy_lookup]
+    if missing_acc:
+        return jsonify({
+            "error": (
+                "Prediction accuracies not found for: "
+                + ", ".join(missing_acc)
+                + ". Check that the PA file uses trait names matching the GEBV traits "
+                  "without the 'GEBV_' prefix."
+            )
+        }), 400
 
-    # G matrix: sample covariance of GEBVs (approximates genetic covariance)
-    G = np.cov(X, rowvar=False)
+    # ---- Estimate G from selected GEBVs ----
+    df_complete = df.dropna(subset=traits).copy()
 
-    # E matrix: diagonal residual variance, assuming h² ≈ 0.5
-    # residual variance ≈ genetic variance when h² = 0.5
-    E = np.diag(np.diag(G) * 0.5)
+    if len(df_complete) < 3:
+        return jsonify({
+            "error": "Too few lines with complete GEBV data for the selected traits"
+        }), 400
 
-    # P matrix: phenotypic covariance = G + E
-    P = G + E
+    Xg = df_complete[traits].values
+    G = np.cov(Xg, rowvar=False)
 
-    # Index coefficients: b = P^{-1} G w
+    # ---- Build diagonal R from prediction accuracies ----
+    acc = np.array([accuracy_lookup[t] for t in pa_traits], dtype=float)
+    R = np.diag(acc)
+
+    # ---- Compute genomic selection index coefficients: b = (RGR)^-1 (RGa) ----
     try:
-        b = np.linalg.solve(P, G @ w)
+        M = R @ G @ R
+        M = M + np.eye(M.shape[0]) * 1e-8  # ridge for numerical stability
+        b = np.linalg.solve(M, R @ G @ w)
     except np.linalg.LinAlgError:
-        return jsonify({"error": "P matrix is singular — traits may be perfectly correlated"}), 400
+        return jsonify({
+            "error": "RGR matrix is singular — selected traits may be too highly correlated"
+        }), 400
 
-    # Index scores: I = X @ b
-    scores = X @ b
+    # ---- Score all lines with complete selected GEBVs ----
+    X_score = df_complete[traits].values
+    scores = (X_score @ b).ravel()
 
     # Build result dataframe
-    result_df = pd.DataFrame({"Line": line_ids, "SmithHazel_Index": scores})
+    result_df = pd.DataFrame({
+        "Line": df_complete["Line"].values,
+        "SmithHazel_Index": scores
+    })
+
     for t in traits:
-        result_df[t] = df.loc[df[traits].dropna().index, t].values
-    if group_col is not None:
-        result_df["Group"] = group_col
+        result_df[t] = df_complete[t].values
+
+    if "Group" in df_complete.columns:
+        result_df["Group"] = df_complete["Group"].values
 
     result_df = result_df.sort_values("SmithHazel_Index", ascending=False).head(top_n)
 
     # Index coefficients with trait names
-    index_coefficients = {t: float(b[i]) for i, t in enumerate(traits)}
+    index_coefficients = {t: float(b[i, 0]) for i, t in enumerate(traits)}
+    trait_accuracies = {traits[i]: float(acc[i]) for i in range(len(traits))}
 
     smith_hazel_result = {
         "ranked_lines": result_df.to_dict(orient="records"),
         "index_coefficients": index_coefficients,
         "economic_weights": trait_weights,
-        "n_lines_total": len(X),
+        "trait_accuracies": trait_accuracies,
+        "n_lines_scored": int(len(df_complete)),
+        "n_lines_covariance": int(len(df_complete)),
         "computed_at": datetime.now().isoformat(),
         "note": (
-            "G estimated from GEBV sample covariance. "
-            "P = G + E where E = 0.5*diag(G), assuming mean h²≈0.5."
+            "G was estimated from selected GEBV covariance and R from trait prediction "
+            "accuracies. Index coefficients were computed using b = (RGR)^-1(RGa)."
         )
     }
 
@@ -331,7 +376,7 @@ if __name__ == '__main__':
     print("  POST /sliders/<trait> - Set slider (JSON: {start_percent, end_percent})")
     print("  POST /sliders/reset - Reset all sliders")
     print("  DEL  /sliders/<trait> - Reset specific slider")
-    print("  POST /smith_hazel_index - Compute Smith-Hazel selection index")
-    print("  GET  /smith_hazel_index/result - Get last Smith-Hazel result")
+    print("  POST /smith_hazel_index - Compute accuracy-adjusted genomic selection index")
+    print("  GET  /smith_hazel_index/result - Get last computed index result")
 
     app.run(host='0.0.0.0', port=5001, debug=False)

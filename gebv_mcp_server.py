@@ -28,12 +28,12 @@ log(f"API target: {API_BASE_URL}")
 def adjust_slider(trait: str, start_percent: float, end_percent: float) -> str:
     """
     Adjust a GEBV trait slider by percentile range.
-    
+
     Args:
         trait: Name of the GEBV trait (e.g., "GEBV_pungency", "GEBV_yield", "GEBV_Brix")
         start_percent: Starting percentile (0-100)
         end_percent: Ending percentile (0-100)
-    
+
     Returns:
         Confirmation message
     """
@@ -173,25 +173,30 @@ def get_current_filters() -> str:
 @mcp.tool()
 def compute_smith_hazel_index(trait_weights: dict, top_n: int = 20) -> str:
     """
-    Compute the Smith-Hazel selection index across multiple GEBV traits.
+    Compute an accuracy-adjusted genomic selection index across multiple GEBV traits.
 
-    Uses the Smith-Hazel index (b = P^-1 * G * w) which accounts for genetic
-    and phenotypic correlations between traits when deriving index coefficients.
-    This means the final weights applied to each trait are adjusted based on
-    how correlated the traits are, unlike a simple weighted average.
+    Uses the genomic selection index:
 
-    Requires at least 2 traits. G is estimated from the GEBV sample covariance;
-    P is approximated as G + E assuming mean heritability of ~0.5.
+        b = (R G R)^-1 (R G a)
+
+    where:
+    - G is the covariance matrix among selected GEBV traits
+    - R is a diagonal matrix of trait prediction accuracies
+    - a is the vector of user-supplied economic weights
+
+    This means the final weights applied to each trait are adjusted based on:
+    • genetic covariance between traits
+    • unequal prediction accuracies of traits
+
+    Requires at least 2 traits.
 
     Args:
         trait_weights: Dict mapping trait names to economic weights.
-                       Weights do not need to sum to any particular value.
-                       Example: {"GEBV_yield": 2.0, "GEBV_Brix": 1.0, "GEBV_pungency": 0.5}
+                       Example: {"GEBV_yield": 2.0, "GEBV_Brix": 1.0}
         top_n: Number of top-ranked lines to return (default 20)
 
     Returns:
-        Ranked lines with index scores, plus derived index coefficients showing
-        how correlations modified the user-supplied economic weights.
+        Ranked lines with genomic selection index scores and derived coefficients.
     """
     log(f"compute_smith_hazel_index called: traits={list(trait_weights.keys())}, top_n={top_n}")
     try:
@@ -206,12 +211,16 @@ def compute_smith_hazel_index(trait_weights: dict, top_n: int = 20) -> str:
             lines = data.get("ranked_lines", [])
             coeffs = data.get("index_coefficients", {})
             econ_w = data.get("economic_weights", {})
+            trait_acc = data.get("trait_accuracies", {})
 
             # Format coefficient comparison
             coeff_lines = []
             for t in econ_w:
+                acc_str = ""
+                if t in trait_acc:
+                    acc_str = f"  |  prediction accuracy={trait_acc[t]:.3f}"
                 coeff_lines.append(
-                    f"  {t}: economic weight={econ_w[t]:.3f}  ->  index coefficient={coeffs.get(t, 0):.4f}"
+                    f"  {t}: economic weight={econ_w[t]:.3f}  ->  index coefficient={coeffs.get(t, 0):.4f}{acc_str}"
                 )
 
             # Format ranked lines
@@ -221,13 +230,16 @@ def compute_smith_hazel_index(trait_weights: dict, top_n: int = 20) -> str:
                 ranked.append(f"  {i}. {row.get('Line', '?')} (score={score:.4f})")
 
             result = (
-                f"Smith-Hazel Index -- top {len(lines)} of {data.get('n_lines_total', '?')} lines\n\n"
-                f"Index coefficients (economic weights adjusted for trait correlations):\n"
+                f"Genomic Selection Index -- top {len(lines)} lines\n"
+                f"(scores computed for {data.get('n_lines_scored', '?')} lines; "
+                f"G covariance estimated from {data.get('n_lines_covariance', '?')} lines)\n\n"
+                f"Index coefficients (economic weights adjusted for covariance and prediction accuracy):\n"
                 + "\n".join(coeff_lines)
                 + f"\n\nRanked lines:\n"
                 + "\n".join(ranked)
                 + f"\n\nNote: {data.get('note', '')}"
             )
+
             log("compute_smith_hazel_index OK")
             return result
         else:
