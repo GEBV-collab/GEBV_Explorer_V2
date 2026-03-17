@@ -11,33 +11,27 @@ import json
 import platform
 from dotenv import load_dotenv
 
-# Windows requires ProactorEventLoop for subprocess support
 if platform.system() == "Windows":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 import anthropic
+import pandas as pd
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-import pandas as pd
-
-# Load environment variables from the repo root .env
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, "..", ".env"))
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
-# MCP server and Python interpreter paths
 MCP_SERVER_SCRIPT = os.path.join(BASE_DIR, "global_mcp_server.py")
-PYTHON_PATH = sys.executable  # use whatever Python is running Streamlit
+PYTHON_PATH = sys.executable
 TRAIT_METADATA_PATH = os.path.join(BASE_DIR, "..", "data", "Trait_Metadata_with_Synonyms.xlsx")
 
 
 def load_trait_metadata() -> str:
-    """Load trait metadata and format it for the system prompt."""
     try:
         df = pd.read_excel(TRAIT_METADATA_PATH)
-
         lines = []
         for _, row in df.iterrows():
             trait_name = row.get('Trait_in_app_name', row.get('Trait', ''))
@@ -45,7 +39,6 @@ def load_trait_metadata() -> str:
             unit = row.get('Unit', '')
             description = row.get('Description', '')
             synonyms = row.get('Synonyms', '')
-
             line = f"- {trait_name}: {full_label}"
             if unit:
                 line += f" ({unit})"
@@ -54,40 +47,22 @@ def load_trait_metadata() -> str:
             if synonyms:
                 line += f" [Also known as: {synonyms}]"
             lines.append(line)
-
         return "\n".join(lines)
     except Exception as e:
         return f"(Could not load trait metadata: {e})"
 
 
-# Cache the metadata on module load
 TRAIT_METADATA = load_trait_metadata()
 
 
 def convert_mcp_tools_to_claude(mcp_tools) -> list:
-    """Convert MCP tool definitions to Claude's tool format."""
-    claude_tools = []
-    for tool in mcp_tools.tools:
-        claude_tools.append({
-            "name": tool.name,
-            "description": tool.description or "",
-            "input_schema": tool.inputSchema
-        })
-    return claude_tools
+    return [
+        {"name": tool.name, "description": tool.description or "", "input_schema": tool.inputSchema}
+        for tool in mcp_tools.tools
+    ]
 
 
 async def run_mcp_chat(user_message: str, context: str = "", api_key: str = None) -> dict:
-    """
-    Run a chat with Claude using MCP tools.
-
-    Args:
-        user_message: The user's question or command
-        context: Optional context about the current data/state
-        api_key: Anthropic API key. Falls back to ANTHROPIC_API_KEY env var if not provided.
-
-    Returns:
-        dict with 'response' (text) and 'tool_calls' (list of executed tools)
-    """
     effective_key = api_key or ANTHROPIC_API_KEY
     if not effective_key:
         return {
@@ -95,21 +70,15 @@ async def run_mcp_chat(user_message: str, context: str = "", api_key: str = None
             "tool_calls": []
         }
 
-    server_params = StdioServerParameters(
-        command=PYTHON_PATH,
-        args=[MCP_SERVER_SCRIPT],
-    )
-
+    server_params = StdioServerParameters(command=PYTHON_PATH, args=[MCP_SERVER_SCRIPT])
     tool_calls = []
     final_response = ""
 
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-
             mcp_tools = await session.list_tools()
             claude_tools = convert_mcp_tools_to_claude(mcp_tools)
-
             client = anthropic.Anthropic(api_key=effective_key)
 
             system_prompt = f"""You are an assistant for the GEBV Explorer application, which visualizes genomic estimated breeding values (GEBVs) for pepper/Capsicum crop traits from the **Global Capsicum Collection** (~10,232 accessions, including control lines).
@@ -118,12 +87,36 @@ async def run_mcp_chat(user_message: str, context: str = "", api_key: str = None
 {TRAIT_METADATA}
 
 ## Tools Available:
+
+### Slider tools (hard AND filters — lines must pass every threshold):
 1. **adjust_slider** - Adjust a trait slider by percentile range (0-100)
 2. **get_available_traits** - List all available GEBV trait names
 3. **reset_all_sliders** - Reset ALL sliders to full range (removes all filters)
 4. **get_current_filters** - See which filters are currently active
 
-## How Percentiles Work:
+### Ranking index tools (soft ranking — all lines scored and ranked):
+5. **compute_genomic_selection_index** - Rank lines using an accuracy-adjusted genomic selection index.
+   Uses b = (RGR)⁻¹(RGa) where G is the GEBV covariance matrix, R is a diagonal matrix of
+   trait prediction accuracies, and a is the vector of economic weights.
+   This is NOT the classic Smith-Hazel equation — it was modified to avoid collinearity
+   issues that arise when using training GEBVs and phenotypic data together.
+   The PA lookup handles _x/_y suffixes in global trait names automatically.
+   Takes trait_weights (e.g. {{"GEBV_yield_y": 2.0, "GEBV_fruitno_x": 1.0}}) and optional top_n.
+   Requires at least 2 traits. The page will update automatically.
+
+6. **compute_selection_index** - Rank lines using a simpler weighted linear index.
+   Scores lines as I = Σ(wⱼ × zᵢⱼ) where zᵢⱼ is the z-score of trait j for line i.
+   Treats traits as independent (no covariance or accuracy adjustment).
+   Takes trait_weights and optional top_n. The page will update automatically.
+
+## When to use which tool:
+- Use **sliders** when the user wants to filter/exclude lines (hard cutoffs)
+- Use **compute_genomic_selection_index** when the user wants a ranking that accounts for
+  genetic covariance between traits and unequal prediction accuracies
+- Use **compute_selection_index** when the user wants a simple, transparent weighted ranking
+- You can use BOTH index methods to compare results, or combine with sliders
+
+## How Percentiles Work (for sliders):
 - "top 10%" = start_percent=90, end_percent=100 (highest values)
 - "bottom 20%" = start_percent=0, end_percent=20 (lowest values)
 - "middle 50%" = start_percent=25, end_percent=75
@@ -133,17 +126,16 @@ async def run_mcp_chat(user_message: str, context: str = "", api_key: str = None
 - Then adjust only the sliders the user specifically requested.
 
 ## Trait Naming Convention:
-This dataset merges two CSVs with the same 13 trait columns. After merging:
+This dataset merges two CSVs with overlapping trait columns. After merging:
 - **_x** suffix = value from the quality/phenotyping CSV
 - **_y** suffix = value from the agronomic averages CSV (averaged across 3 timepoints)
-For example: GEBV_yield_x (quality CSV) and GEBV_yield_y (agronomic average CSV).
 When a user asks for a trait without specifying, prefer the **_y** (averaged) variant.
 
 ## Guidelines:
 - When users mention traits by common names or synonyms, match them to the correct GEBV trait name
-- Explain what each trait means and which variant (_x or _y) you're using when adjusting sliders
-- You can adjust multiple sliders in one response if the user requests multiple traits
-- The app will automatically update after you adjust sliders"""
+- Explain which variant (_x or _y) you are using and why
+- The app will automatically update after you adjust sliders or compute an index
+- When computing an index, explain what method was used and what the weights mean"""
 
             if context:
                 system_prompt += f"\n\nCurrent context:\n{context}"
@@ -165,25 +157,20 @@ When a user asks for a trait without specifying, prefer the **_y** (averaged) va
 
                     for block in assistant_content:
                         if block.type == "tool_use":
-                            tool_name = block.name
-                            tool_input = block.input
-                            tool_use_id = block.id
-
                             try:
-                                result = await session.call_tool(tool_name, tool_input)
+                                result = await session.call_tool(block.name, block.input)
                                 tool_result_content = result.content[0].text if result.content else "Tool executed successfully"
                             except Exception as e:
                                 tool_result_content = f"Error executing tool: {str(e)}"
 
                             tool_calls.append({
-                                "tool": tool_name,
-                                "input": tool_input,
+                                "tool": block.name,
+                                "input": block.input,
                                 "result": tool_result_content
                             })
-
                             tool_results.append({
                                 "type": "tool_result",
-                                "tool_use_id": tool_use_id,
+                                "tool_use_id": block.id,
                                 "content": tool_result_content
                             })
 
@@ -196,25 +183,17 @@ When a user asks for a trait without specifying, prefer the **_y** (averaged) va
                             final_response += block.text
                     break
 
-    return {
-        "response": final_response,
-        "tool_calls": tool_calls
-    }
+    return {"response": final_response, "tool_calls": tool_calls}
 
 
 def chat_with_mcp(user_message: str, context: str = "", api_key: str = None) -> dict:
-    """
-    Synchronous wrapper for run_mcp_chat.
-    Runs in a dedicated thread with its own event loop to avoid conflicts
-    with Streamlit's internal event loop (particularly on macOS).
-    """
+    """Synchronous wrapper for run_mcp_chat."""
     import threading
 
     result = {}
     exception_holder = []
 
     def run_in_thread():
-        # On Windows, ensure we use ProactorEventLoop for subprocess support
         if platform.system() == "Windows":
             loop = asyncio.ProactorEventLoop()
         else:
