@@ -15,6 +15,7 @@ import pandas as pd
 app = Flask(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "..", "data")
 
 slider_state = {}
 _genomic_selection_result = None
@@ -23,7 +24,7 @@ _weighted_index_result = {}
 state_file = os.path.join(BASE_DIR, "global_slider_state.json")
 GENOMIC_SELECTION_STATE_FILE = os.path.join(BASE_DIR, "global_genomic_selection_result.json")
 WEIGHTED_INDEX_STATE_FILE = os.path.join(BASE_DIR, "global_weighted_index_result.json")
-ACCURACY_PATH = os.path.join(BASE_DIR, "data", "n10k_PAs_96traits.csv")
+ACCURACY_PATH = os.path.join(DATA_DIR, "n10k_PAs_96traits.csv")
 
 
 def load_state():
@@ -111,8 +112,8 @@ def get_traits():
 
 def _load_df():
     """Load and merge the global GEBV dataframes."""
-    QCSV = os.path.join(BASE_DIR, "data", "GEBVs_quality_23trait_n10026.csv")
-    ACSV = os.path.join(BASE_DIR, "data", "GEBVs_ag_73traitmean_n10024.csv")
+    QCSV = os.path.join(DATA_DIR, "GEBVs_quality_23trait_n10026.csv")
+    ACSV = os.path.join(DATA_DIR, "GEBVs_ag_73traitmean_n10024.csv")
     df_q = pd.read_csv(QCSV)
     df_a = pd.read_csv(ACSV)
     if "Group" in df_a.columns and "Group" in df_q.columns:

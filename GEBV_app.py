@@ -23,9 +23,11 @@ collection = st.sidebar.radio(
 IS_GLOBAL = collection.startswith("Global")
 
 # ─── 3) Collection-specific config ────────────────────
+DATA_DIR = os.path.join(ROOT, "data")
+
 if IS_GLOBAL:
-    QCSV = os.path.join(GLOBAL_DIR, "data", "GEBVs_quality_23trait_n10026.csv")
-    ACSV = os.path.join(GLOBAL_DIR, "data", "GEBVs_ag_73traitmean_n10024.csv")
+    QCSV = os.path.join(DATA_DIR, "GEBVs_quality_23trait_n10026.csv")
+    ACSV = os.path.join(DATA_DIR, "GEBVs_ag_73traitmean_n10024.csv")
     STATE_FILE = os.path.join(GLOBAL_DIR, "global_slider_state.json")
     GENOMIC_STATE_FILE = os.path.join(GLOBAL_DIR, "global_genomic_selection_result.json")
     WEIGHTED_STATE_FILE = os.path.join(GLOBAL_DIR, "global_weighted_index_result.json")
