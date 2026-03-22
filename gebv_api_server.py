@@ -164,7 +164,7 @@ def _load_df():
     """Load and merge the core GEBV dataframes."""
     BASE = os.path.dirname(__file__)
     df_q = pd.read_csv(os.path.join(BASE, "data", "GEBVs_quality_23trait_n423.csv"))
-    df_a = pd.read_csv(os.path.join(BASE, "data", "GEBVs_ag_73traitmean_n423.csv"))
+    df_a = pd.read_csv(os.path.join(BASE, "data", "GEBVs_STI_73traits_BLUEadjusted_ALL_n423.csv"))
     if "Group" in df_a.columns and "Group" in df_q.columns:
         return pd.merge(df_q, df_a, on=["Line", "Group"], how="inner")
     return pd.merge(df_q, df_a, on="Line", how="inner")

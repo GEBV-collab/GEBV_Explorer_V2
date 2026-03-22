@@ -133,10 +133,10 @@ All data files are in the `data/` directory.
 | File | Description |
 |---|---|
 | `GEBVs_quality_23trait_n423.csv` | Core collection quality traits (23 traits, n=423) |
-| `GEBVs_ag_73traitmean_n423.csv` | Core collection agronomic traits (73 traits, n=423) |
+| `GEBVs_STI_73traits_BLUEadjusted_ALL_n423.csv` | Core collection agronomic traits (73 traits, n=423) |
 | `n423_PAs_96traits.csv` | Trait prediction accuracies for core collection |
 | `GEBVs_quality_23trait_n10026.csv` | Global collection quality traits (23 traits, n=10,026) |
-| `GEBVs_ag_73traitmean_n10024.csv` | Global collection agronomic traits (73 traits, n=10,024) |
+| `GEBVs_STI_73traits_BLUEadjusted_ALL_10k.csv` | Global collection agronomic traits (73 traits, n=10,026) |
 | `n10k_PAs_96traits.csv` | Trait prediction accuracies for global collection |
 | `Trait_Metadata_with_Synonyms.xlsx` | Trait descriptions, units, and synonyms used by the chat assistant |
 

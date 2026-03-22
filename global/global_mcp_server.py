@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+usr/bin/env python3
 """
 GEBV Explorer MCP Server — Global Collection
 Exposes tools for Claude to interact with the global GEBV app (port 5002).
@@ -138,7 +138,7 @@ def compute_genomic_selection_index(trait_weights: dict, top_n: int = 20) -> str
     """
     Compute an accuracy-adjusted genomic selection index across multiple GEBV traits.
 
-    This is Anna McCormick's modified genomic selection index — NOT the classic Smith-Hazel.
+    This is a modified genomic selection index — NOT the classic Smith-Hazel.
     The classic Smith-Hazel requires a phenotypic covariance matrix P, which causes
     collinearity issues when training GEBVs and phenotypic data overlap.
 
