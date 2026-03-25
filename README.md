@@ -1,6 +1,6 @@
 # GEBV Explorer (v2)
 
-Interactive visualization of genomic estimated breeding values (GEBVs) for Capsicum (pepper) crops. A single unified app covering both the core and global collections, with AI-assisted filtering and multi-trait selection indices.
+Interactive visualization of genomic estimated breeding values (GEBVs) for Capsicum (pepper) crops. A single unified app covering both the core and global collections, with AI-assisted filtering and user defined multi-trait selection indices.
 
 ![App screenshot](images/screenshot.png)
 
